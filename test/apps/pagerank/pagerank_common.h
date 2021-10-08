@@ -51,7 +51,7 @@
 #define MAX_ROW_COUNT      2097152
 #define MAX_NZ_COUNT       16777216
 #define MAX_SEGMENTS       1024
-#define MATRIX_SIZE (16 * 1024UL * 1024UL * 1024UL)
+#define MATRIX_SIZE (128 * 1024UL * 1024UL * 1024UL)
 #define REGION_NAME "pagerank"
 #define CONFIG_FILE_SIZE 1024
 
@@ -70,6 +70,9 @@ int *grow_off; // rowptr global memory
 float *gval; // value global memory 
 int64_t *gcol; // column global memory
 int64_t *gvec; // vector global memory
+
+const int MAX = 26;
+const int DATAITEM_NAME_LEN = 20;
 
 struct SparseMatrixConfig {
    int64_t nrows;
@@ -430,28 +433,7 @@ int pagerank_initialize_vectors(int rowCount, Fam_Region_Descriptor *region,
 }
 
 int spmv_initialize_runtime_header(Fam_Region_Descriptor *region,
-                                    mode_t perm) {
-    Fam_Descriptor *dataitem = NULL;
-
-    try {
-        dataitem = my_fam->fam_allocate("Global_header", 1024,
-                                        perm, region);
-#ifdef TRACE
-        Fam_Global_Descriptor global_dataitem;
-        global_dataitem = dataitem->get_global_descriptor();
-        cout
-            << " spmv_initialize_runtime_header Fam_Descriptor { Region ID : 0x"
-            << hex << uppercase << global_dataitem.regionId << ", Offset : 0x"
-            << global_dataitem.offset << ", Key : 0x" << dataitem->get_key()
-            << " }" << endl;
-#endif
-        delete dataitem;
-    } catch (...) {
-        cout << "fam allocate failed:" << endl;
-        return -1;
-    }
-    return 0;
-}
+                                    mode_t perm) { return 0;}
 
 void spmv_read_config_file(char *configFilename, int &matRowCount,
                            int &numSegments, char *inpPath) {
@@ -680,6 +662,111 @@ bool spmv_set_row_zero(Fam_Descriptor *item) {
     }
     return res;
 }
+
+string getRandomString() {
+    char alphabet[MAX] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
+                          'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
+                          's', 't', 'u', 'v', 'w', 'x', 'y', 'z'};
+
+    string res = "";
+    for (int i = 0; i < DATAITEM_NAME_LEN; i++)
+        res = res + alphabet[rand() % MAX];
+
+    return res;
+}
+#if 0
+int* get_memsrv(int peId, int totalPEs, int *numsrv) {
+    int *memsrv = (int *)calloc(1, sizeof(int) * 8);
+    *numsrv = 0;
+
+    int switch_cnt = 8;
+    if (nodesperPE == 1) {
+    switch(msrvcnt) {
+    case 1:      memsrv[0] = 0;
+                 *numsrv = 1;
+                break;
+    case 2 :        memsrv[0] = peId/switch_cnt;
+                    *numsrv = msrvcnt/2;
+                    break;
+    case 4 :
+    case 8 :
+    case 16:
+                    *numsrv = msrvcnt/2;
+
+                    if ( peId < switch_cnt){
+                            for (int i = 0; i < msrvcnt/2; i++)
+                                memsrv[i] = i;
+                    }
+                    else {
+                            for (int j=0, i = msrvcnt/2; i<msrvcnt; j++, i++)
+                                memsrv[j] = i;
+                    }
+                    break;
+
+    }
+    }
+
+    return memsrv;
+}
+#endif
+string getDataitemNameForMemsrv(int memsrv, int msrvcnt) {
+    size_t hashVal;
+    string dataitemName;
+    size_t val = memsrv ;
+    do {
+        dataitemName = getRandomString() ;
+        hashVal = hash<string>{}(dataitemName) % (msrvcnt);
+    } while (hashVal != (size_t)val );
+    return dataitemName;
+}
+
+int create_result_dataitems(int numSegments, Fam_Region_Descriptor *region, mode_t perm, int totalMemSrv, FILE *item_name_fp) {
+   //char resDataitemName[PATH_MAX];
+   int memSrv = 0;
+   for (int i = 0; i < numSegments; i++) {
+	//sprintf(resDataitemName, "res_vector%d", i);
+	string resDataitemName = getDataitemNameForMemsrv(memSrv, totalMemSrv);	
+	try {
+		my_fam->fam_allocate((char *)resDataitemName.c_str(), (sizeof(double) * MAX_ROW_COUNT),
+                                        perm, region);	
+	} catch(...) {
+		cout << "fam allocate failed:" << endl;
+       		return -1;
+   	}
+	fwrite(resDataitemName.c_str(), 1, resDataitemName.size(), item_name_fp);
+        memSrv++;
+        if(memSrv > (totalMemSrv-1))
+                memSrv=0;
+   }
+   return 0;
+}
+
+string spmv_initialize_runtime_header_2(Fam_Region_Descriptor *region,
+                                    mode_t perm, int memSrv, int totalMemSrv) {
+    Fam_Descriptor *dataitem = NULL;
+    string headerDataitemName;
+    try {
+	headerDataitemName = getDataitemNameForMemsrv(memSrv, totalMemSrv);
+        dataitem = my_fam->fam_allocate((char *)headerDataitemName.c_str(), 1024,
+                                        perm, region);
+#ifdef TRACE
+        Fam_Global_Descriptor global_dataitem;
+        global_dataitem = dataitem->get_global_descriptor();
+        cout
+            << " spmv_initialize_runtime_header Fam_Descriptor { Region ID : 0x"
+            << hex << uppercase << global_dataitem.regionId << ", Offset : 0x"
+            << global_dataitem.offset << ", Key : 0x" << dataitem->get_key()
+            << " }" << endl;
+#endif
+        delete dataitem;
+    } catch (...) {
+        cout << "fam allocate failed:" << endl;
+        return nullptr;
+    }
+    return headerDataitemName;
+}
+
+
 
 #endif // __PAGERANK_COMMON_H__
 

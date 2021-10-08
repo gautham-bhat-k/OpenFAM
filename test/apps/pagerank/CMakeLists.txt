@@ -28,6 +28,8 @@ target_link_libraries(fam_csr_preload_parmat openfam)
 add_executable(fam_pagerank_parmat fam_pagerank_parmat.cpp)
 target_link_libraries(fam_pagerank_parmat openfam)
 add_executable(pagerank_standalone pagerank_standalone.cpp)
+add_executable(fam_spmv_graph500 fam_spmv_graph500.cpp)
+target_link_libraries(fam_spmv_graph500 openfam)
 
 include_directories(${PROJECT_BINARY_DIR}/test) # private headers (test)
 

@@ -1078,6 +1078,10 @@ class fam {
      */
     void fam_quiet(void);
 
+#ifdef FAM_PROFILE
+    void fam_reset_profile(void);
+#endif
+	
     /**
      * fam() - constructor for fam class
      */

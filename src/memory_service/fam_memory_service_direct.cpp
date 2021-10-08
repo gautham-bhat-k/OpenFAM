@@ -1,8 +1,9 @@
 /*
  * fam_memory_service_direct.cpp
- * Copyright (c) 2020 Hewlett Packard Enterprise Development, LP. All rights
- * reserved. Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
+ * Copyright (c) 2020-2021 Hewlett Packard Enterprise Development, LP. All
+ * rights reserved. Redistribution and use in source and binary forms, with or
+ * without modification, are permitted provided that the following conditions
+ * are met:
  * 1. Redistributions of source code must retain the above copyright notice,
  * this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright notice,
@@ -114,8 +115,10 @@ Fam_Memory_Service_Direct::Fam_Memory_Service_Direct(
     fam_path = (((fam_path == NULL) || (strcmp(fam_path, strdup("")) == 0))
                     ? config_options["fam_path"].c_str()
                     : fam_path);
+    int num_delayed_free_Threads =
+        atoi(config_options["delayed_free_threads"].c_str());
 
-    allocator = new Memserver_Allocator(fam_path);
+    allocator = new Memserver_Allocator(num_delayed_free_Threads, fam_path);
 
     if (isSharedMemory) {
         memoryRegistration = new Fam_Memory_Registration_SHM();
@@ -201,6 +204,7 @@ Fam_Region_Item_Info Fam_Memory_Service_Direct::allocate(uint64_t regionId,
     uint64_t offset = allocator->allocate(regionId, nbytes);
     void *base = allocator->get_local_pointer(regionId, offset);
 
+    //cout << "Fam_Memory_Service_Direct::allocate::base : " << base << endl;
     info.offset = offset;
     if (memoryRegistration->is_base_require()) {
         info.base = base;
@@ -450,12 +454,21 @@ Fam_Memory_Service_Direct::get_config_info(std::string filename) {
             // If parameter is not present, then set the default.
             options["fam_path"] = (char *)strdup("");
         }
+
+        try {
+            options["delayed_free_threads"] = (char *)strdup(
+                (info->get_key_value("delayed_free_threads")).c_str());
+        } catch (Fam_InvalidOption_Exception e) {
+            // If parameter is not present, then set the default.
+            options["delayed_free_threads"] = (char *)strdup("0");
+        }
     }
     return options;
 }
 
 void Fam_Memory_Service_Direct::init_atomic_queue() {
     allocator->create_ATL_root(memoryPerThread * numAtomicThreads);
+    pthread_rwlock_init(&fiAddrLock, NULL);
     for (int i = 0; i < numAtomicThreads; i++) {
         int ret = atomicQ[i].create(allocator, i);
         if (ret) {

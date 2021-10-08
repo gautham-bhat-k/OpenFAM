@@ -127,6 +127,7 @@ void Fam_Allocator_Client::deallocate(Fam_Descriptor *descriptor) {
     Fam_Global_Descriptor globalDescriptor =
         descriptor->get_global_descriptor();
     uint64_t regionId = globalDescriptor.regionId & REGIONID_MASK;
+    //cout << "Fam_Allocator_Client::deallocate:region id : " << regionId << endl;
     uint64_t offset = globalDescriptor.offset;
     uint64_t memoryServerId = descriptor->get_memserver_id();
     descriptor->set_desc_status(DESC_INVALID);
@@ -176,9 +177,11 @@ Fam_Descriptor *Fam_Allocator_Client::lookup(const char *itemName,
     Fam_Global_Descriptor globalDescriptor;
     globalDescriptor.regionId =
         info.regionId | (info.memoryServerId << MEMSERVERID_SHIFT);
+    //cout << "Fam_Allocator_Client::region id : " << info.regionId << " mem serv id : " << info.memoryServerId << endl;
     globalDescriptor.offset = info.offset;
     Fam_Descriptor *dataItem = new Fam_Descriptor(globalDescriptor);
-    dataItem->bind_key(FAM_KEY_UNINITIALIZED);
+    //dataItem->bind_key(FAM_KEY_UNINITIALIZED);
+    dataItem->bind_key(info.key);
     dataItem->set_size(info.size);
     dataItem->set_perm(info.perm);
     dataItem->set_name(info.name);

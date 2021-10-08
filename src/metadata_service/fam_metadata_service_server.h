@@ -54,7 +54,7 @@ using grpc::Status;
 
 class Fam_Metadata_Service_Server : public Fam_Metadata_Rpc::Service {
   public:
-    Fam_Metadata_Service_Server(uint64_t rpcPort, char *name);
+    Fam_Metadata_Service_Server(uint64_t rpcPort, char *name, Fam_Metadata_Service_Direct *direct=NULL);
 
     ~Fam_Metadata_Service_Server();
 
@@ -164,6 +164,10 @@ class Fam_Metadata_Service_Server : public Fam_Metadata_Rpc::Service {
     ::grpc::Status metadata_find_dataitem_and_check_permissions(
         ::grpc::ServerContext *context, const ::Fam_Metadata_Request *request,
         ::Fam_Metadata_Response *response);
+
+    ::grpc::Status get_memory_server_list(
+        ::grpc::ServerContext *context, const ::Fam_Metadata_Request *request,
+        ::Fam_Metadata_Region_Info_Response *response) override;
 
   private:
     char *serverAddress;

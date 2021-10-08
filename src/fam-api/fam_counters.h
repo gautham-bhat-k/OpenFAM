@@ -37,7 +37,8 @@
 
 using namespace std;
 using namespace chrono;
-using Fam_Time = boost::atomic_uint64_t;
+//using Fam_Time = boost::atomic_uint64_t;
+using Fam_Time = uint64_t;
 
 typedef __attribute__((unused)) uint64_t Fam_Profile_Time;
 

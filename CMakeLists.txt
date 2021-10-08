@@ -74,9 +74,9 @@ message(STATUS "====================")
 # of gRPC generated files
 set(CMAKE_CXX_FLAGS "-std=c++11 -pthread")
 set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -Wall -W -Wextra -Wredundant-decls -Wunused -Wunused-macros -Wno-unused-parameter -Wcast-align -Wwrite-strings -Wmissing-field-initializers -Wendif-labels -Winit-self -Wlogical-op -Wpacked -Wstack-protector -Wformat=2 -Wswitch-enum -Wstrict-overflow=5 -Wpointer-arith -Wnormalized=nfc -Wno-long-long -Wconversion -Wunreachable-code")
+        "${CMAKE_CXX_FLAGS} -Wall -W -Wextra -Wredundant-decls -Wunused -Wunused-macros -Wno-unused-parameter -Wcast-align -Wwrite-strings -Wmissing-field-initializers -Wendif-labels -Winit-self -Wlogical-op -Wpacked -Wstack-protector -Wformat=2 -Wswitch-enum -Wstrict-overflow=5 -Wpointer-arith -Wnormalized=nfc -Wno-long-long -Wconversion -Wunreachable-code -fopenmp -fPIC")
 # Convert all warnings to errors
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 
 
 #
@@ -112,11 +112,21 @@ include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/third-party/build/include) # th
 include_directories(${PROJECT_SOURCE_DIR}/test/util) # utility functions
 include_directories(${PROJECT_SOURCE_DIR}/src) # private headers (src)
 include_directories(${PROJECT_SOURCE_DIR}/src/pmi) # private headers (src)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/src)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/src/na)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/src/proc_extra)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/src/na)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/install/include)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/Testing)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/Testing/na)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/build/Testing)
+include_directories(${PROJECT_SOURCE_DIR}/third-party/openpa/install/include)
 #
 # library directories
 #
 link_directories(${PROJECT_SOURCE_DIR}/third-party/build/lib) # third-party libraries
-
+link_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/install/lib)
+link_directories(${PROJECT_SOURCE_DIR}/third-party/mercury/build/bin)
 #
 # default system include and link directories
 #
@@ -131,9 +141,10 @@ include_directories(/usr/local/include)
 set( TEST_RUNTIME "PMIX" )
 set( TEST_NPE 1 ) #Number of pe used with mpirun
 set( TEST_DEFAULT_REGION "Default" )
-set( TEST_CIS_SERVER "127.0.0.1" )
+set( TEST_CIS_SERVER "escnode16" )
 set( TEST_GRPC_PORT "8787" )
-set( TEST_LIBFABRIC_PROVIDER "sockets" )
+set( TEST_LIBFABRIC_PROVIDER "psm2" )
+#set( TEST_LIBFABRIC_PROVIDER "sockets")
 set( TEST_FAM_THREAD_MODEL "FAM_THREAD_SERIALIZE" )
 set( TEST_FAM_CONTEXT_MODEL "FAM_CONTEXT_DEFAULT" )
 set( TEST_NUM_CONSUMER "1" )
@@ -150,6 +161,7 @@ ENDIF()
 set( TEST_ENABLE_KNOWN_ISSUES "no" )
 if (ENABLE_KNOWN_ISSUES)
         set( TEST_ENABLE_KNOWN_ISSUES "yes" )
+        add_definitions(-DENABLE_KNOWN_ISSUES)
 endif()
 
 if (USE_FAM_PERSIST)
@@ -165,6 +177,11 @@ endif()
 if (USE_BOOST_FIBER)
         message(STATUS "Using Boost Fiber")
         add_definitions(-DUSE_BOOST_FIBER)
+endif()
+
+if (USE_MERCURY)
+        message(STATUS "Using mercury for rpc")
+        add_definitions(-DUSE_MERCURY)
 endif()
 
 # Use native atomics
@@ -190,9 +207,21 @@ add_subdirectory(test/microbench)
 add_subdirectory(test/apps)
 add_subdirectory(test/permission-test)
 add_subdirectory(examples/api)
-#
-# find src include -regex '.*\.\(c\|cpp\|h\)$' -print | xargs clang-format -i -style="{BasedOnStyle: llvm, IndentWidth: 4}"
-#
+
+file(READ ${PROJECT_SOURCE_DIR}/scripts/multi-mem-test-arg.txt.in CONTENTS)
+file(WRITE ${PROJECT_SOURCE_DIR}/scripts/multi-mem-test-arg.txt "")
+file(APPEND ${PROJECT_SOURCE_DIR}/scripts/multi-mem-test-arg.txt "${CONTENTS}")
+file(APPEND ${PROJECT_SOURCE_DIR}/scripts/multi-mem-test-arg.txt "${PROJECT_SOURCE_DIR}/\n")
+file(APPEND ${PROJECT_SOURCE_DIR}/scripts/multi-mem-test-arg.txt "${PROJECT_SOURCE_DIR}/build/test/config_files/multi-mem/\n")
+file(APPEND ${PROJECT_SOURCE_DIR}/scripts/multi-mem-test-arg.txt "${PROJECT_SOURCE_DIR}/build/\n")
+
+file(READ ${PROJECT_SOURCE_DIR}/test/microbench/fam-api-mb/scripts/single-mem-test-arg.txt.in CONTENTS)
+file(WRITE ${PROJECT_SOURCE_DIR}/test/microbench/fam-api-mb/scripts/single-mem-test-arg.txt "")
+file(APPEND ${PROJECT_SOURCE_DIR}/test/microbench/fam-api-mb/scripts/single-mem-test-arg.txt "${CONTENTS}")
+file(APPEND ${PROJECT_SOURCE_DIR}/test/microbench/fam-api-mb/scripts/single-mem-test-arg.txt "${PROJECT_SOURCE_DIR}/\n")
+file(APPEND ${PROJECT_SOURCE_DIR}/test/microbench/fam-api-mb/scripts/single-mem-test-arg.txt "${PROJECT_SOURCE_DIR}/build/test/config_files/single-mem/\n")
+file(APPEND ${PROJECT_SOURCE_DIR}/test/microbench/fam-api-mb/scripts/single-mem-test-arg.txt "${PROJECT_SOURCE_DIR}/build/\n")
+
 install (FILES "${PROJECT_SOURCE_DIR}/test/setup.sh" PERMISSIONS OWNER_READ OWNER_WRITE
         OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         DESTINATION ${PROJECT_BINARY_DIR})
@@ -201,3 +230,6 @@ install (FILES "${PROJECT_SOURCE_DIR}/test/unit-test/config/sample_config" PERMI
         GROUP_READ WORLD_READ
         DESTINATION ${PROJECT_BINARY_DIR}/test/unit-test/config/)
 
+#
+# find src include -regex '.*\.\(c\|cpp\|h\)$' -print | xargs clang-format -i -style="{BasedOnStyle: llvm, IndentWidth: 4}"
+#

@@ -59,7 +59,7 @@ class Fam_Context {
         numLastTxFailCnt = 0;
 
         fi->caps = FI_RMA | FI_WRITE | FI_READ | FI_ATOMIC | FI_REMOTE_WRITE |
-                   FI_REMOTE_READ;
+                   FI_REMOTE_READ | FI_MSG;
         fi->tx_attr->op_flags = FI_DELIVERY_COMPLETE;
         fi->mode = 0;
         fi->tx_attr->mode = 0;

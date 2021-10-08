@@ -42,6 +42,7 @@ typedef __attribute__((unused)) uint64_t Profile_Time;
 #ifdef MEMSERVER_PROFILE
 
 using Memserver_Time = boost::atomic_uint64_t;
+//using Memserver_Time = uint64_t;
 
 #undef MEMSERVER_COUNTER
 #define MEMSERVER_COUNTER(name) prof_##name,
@@ -100,6 +101,11 @@ typedef enum Memory_Reg_Fabric_Counter_Enum {
     MEMORY_REG_FABRIC_COUNTER_MAX
 } Memory_Reg_Fabric_Counter_Enum_T;
 
+typedef enum Fam_Wrapper_Counter_Enum {
+#include "fam-api/fam_wrapper_counters.tbl"
+    FAM_WRAPPER_COUNTER_MAX
+} Fam_Wrapper_Counter_Enum_T;
+
 #define MEMSERVER_PROFILE_START(PROFILE_NAME)                                  \
     struct PROFILE_NAME##_Counter_St {                                         \
         Memserver_Time count;                                                  \
@@ -120,6 +126,12 @@ typedef enum Memory_Reg_Fabric_Counter_Enum {
                 .count());                                                     \
         return time;                                                           \
     }                                                                          \
+/*									       \
+        uint64_t hi, lo, aux;                                                  \
+        __asm__ __volatile__("rdtscp" : "=a"(lo), "=d"(hi), "=c"(aux));        \
+        return (uint64_t)lo | ((uint64_t)hi << 32);                            \
+    }									       \
+*/									       \
     uint64_t PROFILE_NAME##_time_diff_nanoseconds(Profile_Time start,          \
                                                   Profile_Time end) {          \
         return (end - start);                                                  \
@@ -145,11 +157,16 @@ typedef enum Memory_Reg_Fabric_Counter_Enum {
 
 #define MEMSERVER_PROFILE_ADD_TO_TOTAL_OPS(PROFILE_NAME, apiIdx, func_time)    \
     {                                                                          \
+/*
+        profile##PROFILE_NAME##Data[apiIdx].total = profile##PROFILE_NAME##Data[apiIdx].total + func_time; \
+        profile##PROFILE_NAME##Data[apiIdx].count++; \
+*/									       \
         uint64_t one = 1;                                                      \
         profile##PROFILE_NAME##Data[apiIdx].total.fetch_add(                   \
             func_time, boost::memory_order_seq_cst);                           \
         profile##PROFILE_NAME##Data[apiIdx].count.fetch_add(                   \
             one, boost::memory_order_seq_cst);                                 \
+									       \
     }
 
 #define DUMP_HEADING1(name)                                                    \
@@ -249,3 +266,4 @@ typedef enum Memory_Reg_Fabric_Counter_Enum {
 #define MEMSERVER_PROFILE_TOTAL(profile_name, apiIdx)
 #define MEMSERVER_DUMP_PROFILE_SUMMARY(profile_name)
 #endif
+

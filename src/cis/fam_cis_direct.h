@@ -34,12 +34,14 @@
 
 #include "cis/fam_cis.h"
 #include "common/fam_config_info.h"
+#include "common/mercury_engine.h"
 #include "memory_service/fam_memory_service.h"
 #include "memory_service/fam_memory_service_client.h"
 #include "memory_service/fam_memory_service_direct.h"
 #include "metadata_service/fam_metadata_service.h"
 #include "metadata_service/fam_metadata_service_client.h"
 #include "metadata_service/fam_metadata_service_direct.h"
+#include "metadata_service/fam_metadata_mercury_rpc.h"
 
 using namespace metadata;
 
@@ -51,19 +53,19 @@ using metadataServerMap = std::map<uint64_t, Fam_Metadata_Service *>;
 class Fam_CIS_Direct : public Fam_CIS {
   public:
     Fam_CIS_Direct(char *cisName, bool useAsyncCopy_ = false,
-                   bool isSharedMemory = false);
+                   bool isSharedMemory = false, const char *svr_addr_string=NULL);
 
     ~Fam_CIS_Direct();
+
+    void reset_profile();
+
+    void dump_profile();
 
     Fam_Memory_Service *get_memory_service(uint64_t memoryServerId);
 
     Fam_Metadata_Service *get_metadata_service(uint64_t metadataServerId);
 
     uint64_t get_num_memory_servers();
-
-    void reset_profile(uint64_t memoryServerId);
-
-    void dump_profile(uint64_t memoryServerId);
 
     Fam_Region_Item_Info create_region(string name, size_t nbytes,
                                        mode_t permission,
@@ -181,14 +183,20 @@ class Fam_CIS_Direct : public Fam_CIS {
     configFileParams file_options;
     uint64_t memoryServerCount;
     uint64_t memServerInfoSize;
-    std::vector<std::tuple<uint64_t, size_t, void *>> *memServerInfoV;
+    std::vector<std::tuple<uint64_t, size_t, void *> > *memServerInfoV;
     void *memServerInfoBuffer;
     bool useAsyncCopy;
+    size_t metadataMaxKeyLen;
+    hg_id_t lookup_rpc_id;
+    hg_addr_t svr_addr;
+    //hg_handle_t lookup_handle;
     void *get_local_pointer(uint64_t regionId, uint64_t offset,
                             uint64_t memoryServerId);
 
+    //static hg_return_t lookup_cb(const struct hg_cb_info *info);
     uint64_t generate_memory_server_id(const char *name) {
-        std::uint64_t hashVal = std::hash<std::string>{}(name);
+        std::uint64_t hashVal = std::hash<std::string> {}
+        (name);
         return hashVal % memoryServerCount;
     }
     int create_region_failure_cleanup(

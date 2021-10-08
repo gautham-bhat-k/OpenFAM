@@ -536,10 +536,12 @@ int fabric_register_mr(void *addr, size_t size, uint64_t *key,
     FI_CALL(ret, fi_mr_reg, domain, addr, size, access, 0, *key, 0, &mr, 0);
     if (ret < 0) {
         // print_fierr("fi_mr_reg", ret);
+        cout << "fi_mr_reg error : " << ret << endl;
         return ret;
     }
 
     FI_CALL(*key, fi_mr_key, mr);
+     cout << "fi_mr_reg key : " << key << endl;
     return ret;
 }
 

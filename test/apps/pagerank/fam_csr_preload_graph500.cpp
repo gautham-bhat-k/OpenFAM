@@ -49,12 +49,15 @@ int main(int argc, char **argv) {
     mode_t perm = 0777;
     SparseMatrixConfig config;
 
+    int totalMemSrv;
     // Parse cmdline args
-    if (argc != 2) {
+    if (argc != 3) {
         cout << argv[0]<<" <config_file>" << endl;
         exit(1);
     }
     strcpy(configFilename, argv[1]);
+    totalMemSrv = atoi(argv[2]);
+    //int outputSegments = atoi(argv[3]);
     spmv_read_config_file(configFilename, matRowCount, numSegments, inpPath);
     cout << "Matrix : " << matRowCount << " X " << matRowCount << endl;
     cout << "Num Segments : " << numSegments << endl;
@@ -78,6 +81,18 @@ int main(int argc, char **argv) {
         cout << "writing config data failed" << endl;
         exit(1);
     }
+    //if (totalMemSrv > 1)
+    	int memSrv = 0;
+  
+    sprintf(tmpFilename, "/item_names");
+    strcpy(inpFilename, inpPath);
+    strcat(inpFilename, tmpFilename); 
+    FILE *item_name_fp = fopen(inpFilename, "a");
+    if (item_name_fp == NULL) {
+        printf("File not found:%s\n", inpFilename);
+        return -1;
+    }
+ 
     // Create data item for each segment and load contents
     cout << "Loading CSR data" << endl;
     for (int i = 0; i < numSegments; i++) {
@@ -89,8 +104,9 @@ int main(int argc, char **argv) {
         strcpy(inpFilename, inpPath);
         strcat(inpFilename, tmpFilename);
         size = (MAX_ROW_COUNT + 5) * sizeof(int);
-	char* rowptrDataitemName = (char *)("rowptr"+std::to_string(i)).c_str();
-        ret = spmv_load_file_to_dataitem(inpFilename, rowptrDataitemName, region, perm,
+	//char* rowptrDataitemName = (char *)("rowptr"+std::to_string(i)).c_str();
+	string rowptrDataitemName = getDataitemNameForMemsrv(memSrv, totalMemSrv);
+        ret = spmv_load_file_to_dataitem(inpFilename, (char*)rowptrDataitemName.c_str(), region, perm,
                                          size);
         if (ret < 0) {
             cout << "Reading row data failed" << endl;
@@ -100,9 +116,10 @@ int main(int argc, char **argv) {
         sprintf(tmpFilename, "/column%d.bin", i);
         strcpy(inpFilename, inpPath);
         strcat(inpFilename, tmpFilename);
-	char* columnDataitemName = (char *)("colptr"+std::to_string(i)).c_str();
+	//char* columnDataitemName = (char *)("colptr"+std::to_string(i)).c_str();
+	string columnDataitemName = getDataitemNameForMemsrv(memSrv, totalMemSrv);
         size = (MAX_NZ_COUNT) * sizeof(int64_t);
-        ret = spmv_load_file_to_dataitem(inpFilename, columnDataitemName, region, perm,
+        ret = spmv_load_file_to_dataitem(inpFilename, (char*)columnDataitemName.c_str(), region, perm,
                                          size);
         if (ret < 0) {
             cout << "Reading column data failed" << endl;
@@ -113,22 +130,33 @@ int main(int argc, char **argv) {
         strcpy(inpFilename, inpPath);
         strcat(inpFilename, tmpFilename);
         size = (MAX_NZ_COUNT) * sizeof(int64_t);
-	char* valueDataitemName = (char *)("valptr"+std::to_string(i)).c_str();
-        ret = spmv_load_file_to_dataitem(inpFilename, valueDataitemName, region, perm,
+	//char* valueDataitemName = (char *)("valptr"+std::to_string(i)).c_str();
+	string valueDataitemName = getDataitemNameForMemsrv(memSrv, totalMemSrv);
+        ret = spmv_load_file_to_dataitem(inpFilename,(char*)valueDataitemName.c_str(), region, perm,
                                          size);
         if (ret < 0) {
             cout << "Reading weight data failed" << endl;
             exit(1);
         }
+	fwrite(rowptrDataitemName.c_str(), 1, rowptrDataitemName.size(), item_name_fp);
+	fwrite(columnDataitemName.c_str(), 1, columnDataitemName.size(), item_name_fp);
+	fwrite(valueDataitemName.c_str(), 1, valueDataitemName.size(), item_name_fp);
+	memSrv++;
+	if(memSrv > (totalMemSrv-1))
+		memSrv=0;
     }
 
     // Create and initialize dataitem for vector
     cout << "Create dataitem for vector !!!" << endl;
     pagerank_initialize_vectors(matRowCount, region, perm);
 
-    cout << "Create dataitem for runtime header!!!" << endl;
-    spmv_initialize_runtime_header(region, perm);
+    cout << "Create result dataitems" << endl;
+    create_result_dataitems(numSegments, region, perm, totalMemSrv, item_name_fp);
 
+    cout << "Create dataitem for runtime header!!!" << endl;
+    string headerDataitemName = spmv_initialize_runtime_header_2(region, perm, 0, totalMemSrv);
+    fwrite(headerDataitemName.c_str(), 1, headerDataitemName.size(), item_name_fp);
+    fclose(item_name_fp);
     cout << "CSR load complete !!!" << endl;
     delete region;
     my_fam->fam_finalize("default");

@@ -33,9 +33,14 @@
 #endif
 
 #include "metadata_service/fam_metadata_service_server.h"
+#include "metadata_service/fam_metadata_mercury_rpc.h"
+#include "common/mercury_server_init.h"
+
 #include <iostream>
 using namespace std;
 using namespace metadata;
+
+#define HG_TEST_HAS_THREAD_POOL
 
 #ifdef OPENFAM_VERSION
 #define METADATASERVER_VERSION OPENFAM_VERSION
@@ -52,8 +57,43 @@ void signal_handler(int signum) {
 }
 #endif
 
-Fam_Metadata_Service_Server *metadataService;
+#if 0
+Fam_Metadata_Service_Direct *metadataDirect;
 
+static hg_return_t fam_metadata_merc_lookup(hg_handle_t handle) {
+                my_rpc_in_t request;
+                //request = (Fam_Metadata_Merc_Request *)malloc(sizeof(Fam_Metadata_Merc_Request));
+
+                hg_return_t ret;
+
+                ret = HG_Get_input(handle, &request);
+                assert(ret == HG_SUCCESS);
+
+                Fam_DataItem_Metadata dataitem;
+                bool result = metadataDirect->metadata_find_dataitem(request.key_dataitem_name, request.key_region_name, dataitem);
+
+                my_rpc_out_t response;
+                response.region_id = dataitem.regionId;
+                response.name = dataitem.name;
+                response.offset = dataitem.offset;
+                response.size = dataitem.size;
+                response.perm = dataitem.perm;
+                response.uid = dataitem.uid;
+                response.gid = dataitem.gid;
+                response.maxkeylen = metadataDirect->metadata_maxkeylen();
+                response.memsrv_id = dataitem.memoryServerId;
+
+                ret = HG_Respond(handle, NULL, NULL, &response);
+                assert(ret == HG_SUCCESS);
+                (void) ret;
+
+                return ret;
+}
+#endif
+
+Fam_Metadata_Service_Server *metadataService;
+Fam_Metadata_Service_Direct *direct;
+Fam_Metadata_Mercury_RPC *metadataMercServer;
 int main(int argc, char *argv[]) {
     uint64_t rpcPort = 8788;
     char *name = strdup("127.0.0.1");
@@ -86,9 +126,18 @@ int main(int argc, char *argv[]) {
         } else if ((std::string(argv[i]) == "-r") ||
                    (std::string(argv[i]) == "--rpcport")) {
             rpcPort = atoi(argv[++i]);
-        }
+        } else 
+	    continue;
     }
-
+    int argc_tmp = argc-4;
+    char *argv_tmp[50];
+    int j=1;
+    argv_tmp[0] = argv[0];
+    for(int i=5; i<argc; i++) {
+	argv_tmp[j] = argv[i];
+	j++;
+    } 
+    
 #ifdef COVERAGE
     signal(SIGINT, signal_handler);
     signal(SIGQUIT, signal_handler);
@@ -97,8 +146,27 @@ int main(int argc, char *argv[]) {
 
     metadataService = NULL;
     try {
-        metadataService = new Fam_Metadata_Service_Server(rpcPort, name);
+#ifdef USE_MERCURY
+	metadataMercServer = new Fam_Metadata_Mercury_RPC();
+	direct = metadataMercServer->get_metadata_service();
+	cout << "name : " << name << " port : " << rpcPort << endl;
+        metadataService = new Fam_Metadata_Service_Server(rpcPort, name, direct);
+	//hg_engine_init(NA_TRUE, "ofi+psm2");
+	//hg_engine_print_self_addr();
+	struct hg_test_info init_info;
+	mercury_server_init(argc_tmp, argv_tmp, init_info);
+	cout << "Mercury server initialized...." << endl;
+	if(!init_info.hg_class) {
+		cout << "Init info is empty ...." << endl;
+		exit(1);
+	}
+	metadataMercServer->register_with_mercury(init_info.hg_class);
+	cout << "Mercury reg done..." << endl;
         metadataService->run();
+#else
+	metadataService = new Fam_Metadata_Service_Server(rpcPort, name);
+	metadataService->run();
+#endif
     } catch (Fam_Exception &e) {
         if (metadataService) {
             delete metadataService;
@@ -110,6 +178,11 @@ int main(int argc, char *argv[]) {
     if (metadataService) {
         delete metadataService;
         metadataService = NULL;
+    }
+    if (metadataMercServer) {
+	delete metadataMercServer;
+	metadataMercServer = NULL;
+	hg_engine_finalize();
     }
 
     return 0;

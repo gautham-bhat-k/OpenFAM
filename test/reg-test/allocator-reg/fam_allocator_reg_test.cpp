@@ -42,6 +42,7 @@ using namespace openfam;
 
 fam *my_fam;
 Fam_Options fam_opts;
+int NUM_ITR = 1;
 
 // Test case 1 - put get test.
 TEST(FamAllocator, AllocatorSuccess) {
@@ -58,21 +59,61 @@ TEST(FamAllocator, AllocatorSuccess) {
     EXPECT_NO_THROW(item = my_fam->fam_allocate(firstItem, 1024, 0777, desc));
     EXPECT_NE((void *)NULL, item);
 
-    EXPECT_NO_THROW(my_fam->fam_change_permissions(desc, 0444));
+    //EXPECT_NO_THROW(my_fam->fam_change_permissions(desc, 0444));
 
-    EXPECT_NO_THROW(my_fam->fam_change_permissions(item, 0444));
+    //EXPECT_NO_THROW(my_fam->fam_change_permissions(item, 0444));
 
     EXPECT_NO_THROW(my_fam->fam_lookup_region(testRegion));
 
-    EXPECT_NO_THROW(my_fam->fam_lookup(firstItem, testRegion));
+    	EXPECT_NO_THROW(item = my_fam->fam_lookup(firstItem, testRegion));
+   	EXPECT_NE((void *)NULL, item);
+    char *local = strdup("Test message");
+    char *local2 = (char *)malloc(20);
+#if 1
+    my_fam->fam_reset_profile();
+    //item = NULL;
+    for(int i=0; i<NUM_ITR; i++) {
+	    //cout << "Iteration : " << i << endl;
+	    EXPECT_NO_THROW(item = my_fam->fam_lookup(firstItem, testRegion));
+            EXPECT_NE((void *)NULL, item);
 
-    EXPECT_NO_THROW(my_fam->fam_deallocate(item));
+	
+    }
+#endif
 
-    EXPECT_NO_THROW(my_fam->fam_destroy_region(desc));
+#if 0
+	try {
+	    my_fam->fam_put_blocking(local, item, 0, 13);
+	} catch(Fam_Exception &e) {
+	    cout << e.fam_error_msg() << endl;
+	}
+
+	    // allocate local memory to receive 20 elements
+
+	    EXPECT_NO_THROW(my_fam->fam_get_blocking(local2, item, 0, 13));
+
+	    EXPECT_STREQ(local, local2);
+#endif
+
+    //EXPECT_NO_THROW(my_fam->fam_deallocate(item));
+    try {
+	my_fam->fam_deallocate(item);
+    } catch(Fam_Exception &e) {
+	cout << e.fam_error_msg() << endl;
+    }
+
+    //EXPECT_NO_THROW(my_fam->fam_destroy_region(desc));
+    try {
+        my_fam->fam_destroy_region(desc);
+    } catch(Fam_Exception &e) {
+        cout << e.fam_error_msg() << endl;
+    }
 
     delete item;
     delete desc;
 
+    free(local);
+    free(local2);
     free((void *)testRegion);
     free((void *)firstItem);
 }
@@ -81,15 +122,24 @@ int main(int argc, char **argv) {
     int ret;
     ::testing::InitGoogleTest(&argc, argv);
 
+    NUM_ITR = atoi(argv[1]);
+
     my_fam = new fam();
 
     init_fam_options(&fam_opts);
 
-    EXPECT_NO_THROW(my_fam->fam_initialize("default", &fam_opts));
+    //EXPECT_NO_THROW(my_fam->fam_initialize("default", &fam_opts));
+    try {
+	my_fam->fam_initialize("default", &fam_opts);
+    } catch(Fam_Exception &e) {
+	cout << "Init error : " << e.fam_error_msg() << endl;
+    }
 
     ret = RUN_ALL_TESTS();
 
     EXPECT_NO_THROW(my_fam->fam_finalize("default"));
+
+    //delete my_fam;
 
     return ret;
 }

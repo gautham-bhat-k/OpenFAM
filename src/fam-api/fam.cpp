@@ -50,6 +50,10 @@
 #include "fam_counters.h"
 #endif
 
+#ifndef OPENFAM_VERSION
+#define OPENFAM_VERSION "0.0.0"
+#endif
+
 // Add this wrapper try catch block to return only Fam_Exception object
 // instead of derived exception class objects, to maintain uniformity in
 // exception handling by the application.
@@ -361,7 +365,9 @@ class fam::Impl_ {
     void clean_fam_options();
     int validate_item(Fam_Descriptor *descriptor);
     configFileParams get_info_from_config_file(std::string filename);
-
+#ifdef FAM_PROFILE
+    void fam_reset_profile();
+#endif
   private:
     uid_t uid;
     gid_t gid;
@@ -417,9 +423,12 @@ class fam::Impl_ {
 #define FAM_PROFILE_END_OPS(apiIdx) __FAM_PROFILE_END_OPS(prof_##apiIdx)
 
 #define __FAM_CNTR_INC_API(apiIdx)                                             \
+    profileData[apiIdx][FAM_CNTR_API].count++; 			       
+/*
     uint64_t one = 1;                                                          \
     profileData[apiIdx][FAM_CNTR_API].count.fetch_add(                         \
         one, boost::memory_order_seq_cst);
+*/
 #define __FAM_PROFILE_START_ALLOCATOR(apiIdx)                                  \
     Fam_Profile_Time startAlloc = fam_get_time();
 
@@ -441,17 +450,23 @@ class fam::Impl_ {
 
     void fam_add_to_total_profile(Fam_Counter_Type_T type, int apiIdx,
                                   Fam_Profile_Time total) {
-        profileData[apiIdx][type].total.fetch_add(total,
-                                                  boost::memory_order_seq_cst);
+        profileData[apiIdx][type].total = profileData[apiIdx][type].total + total;
+
+	//profileData[apiIdx][type].total.fetch_add(total,
+        //                                          boost::memory_order_seq_cst);
     }
 
     void fam_total_api_time(int apiIdx) {
+	uint64_t total = profileData[apiIdx][FAM_CNTR_ALLOCATOR].total + profileData[apiIdx][FAM_CNTR_OPS].total;
+	profileData[apiIdx][FAM_CNTR_API].total = profileData[apiIdx][FAM_CNTR_API].total + total;
+/*
         uint64_t total = profileData[apiIdx][FAM_CNTR_ALLOCATOR].total.load(
                              boost::memory_order_seq_cst) +
                          profileData[apiIdx][FAM_CNTR_OPS].total.load(
                              boost::memory_order_seq_cst);
         profileData[apiIdx][FAM_CNTR_API].total.fetch_add(
             total, boost::memory_order_seq_cst);
+*/
     }
 
     void fam_dump_profile_banner(void) {
@@ -572,6 +587,13 @@ class fam::Impl_ {
 #endif
 };
 
+#ifdef FAM_PROFILE
+void fam::Impl_::fam_reset_profile() {
+    FAM_PROFILE_INIT();
+    FAM_PROFILE_START_TIME();
+}
+#endif
+
 /**
  * fam() - constructor for fam class
  */
@@ -605,7 +627,7 @@ void fam::Impl_::fam_initialize(const char *grpName, Fam_Options *options) {
     //
     optValueMap = new std::map<std::string, const void *>();
 
-    optValueMap->insert({supportedOptionList[VERSION], strdup("0.0.1")});
+    optValueMap->insert({supportedOptionList[VERSION], strdup(OPENFAM_VERSION)});
 
     // Look for options information from config file.
     std::string config_file_path;
@@ -1187,10 +1209,13 @@ Fam_Descriptor *fam::Impl_::fam_allocate(uint64_t nbytes,
 Fam_Descriptor *fam::Impl_::fam_allocate(const char *name, uint64_t nbytes,
                                          mode_t accessPermissions,
                                          Fam_Region_Descriptor *region) {
-    FAM_CNTR_INC_API(fam_allocate);
-    FAM_PROFILE_START_ALLOCATOR(fam_allocate);
+    //FAM_CNTR_INC_API(fam_allocate);
+   // FAM_PROFILE_START_ALLOCATOR(fam_allocate);
+#if 1
     auto ret = famAllocator->allocate(name, nbytes, accessPermissions, region);
-    FAM_PROFILE_END_ALLOCATOR(fam_allocate);
+#endif
+    //FAM_PROFILE_END_ALLOCATOR(fam_allocate);
+    //Fam_Descriptor *ret = new Fam_Descriptor();
     return ret;
 }
 
@@ -1380,13 +1405,13 @@ void fam::Impl_::fam_get_blocking(void *local, Fam_Descriptor *descriptor,
     std::ostringstream message;
 
     FAM_CNTR_INC_API(fam_get_blocking);
-    FAM_PROFILE_START_ALLOCATOR(fam_get_blocking);
+    FAM_PROFILE_START_OPS(fam_get_blocking);
+    //FAM_PROFILE_START_ALLOCATOR(fam_get_blocking);
     if ((local == NULL) || (descriptor == NULL) || (nbytes == 0)) {
         THROW_ERR_MSG(Fam_InvalidOption_Exception, "Invalid Options");
     }
     ret = validate_item(descriptor);
-    FAM_PROFILE_END_ALLOCATOR(fam_get_blocking);
-    FAM_PROFILE_START_OPS(fam_get_blocking);
+    //FAM_PROFILE_END_ALLOCATOR(fam_get_blocking);
     if (ret == 0) {
         // Read data from FAM region with this key
         ret = famOps->get_blocking(local, descriptor, offset, nbytes);
@@ -1444,14 +1469,14 @@ void fam::Impl_::fam_put_blocking(void *local, Fam_Descriptor *descriptor,
     std::ostringstream message;
 
     FAM_CNTR_INC_API(fam_put_blocking);
-    FAM_PROFILE_START_ALLOCATOR(fam_put_blocking);
+    FAM_PROFILE_START_OPS(fam_put_blocking);
+    //FAM_PROFILE_START_ALLOCATOR(fam_put_blocking);
     if ((local == NULL) || (descriptor == NULL) || (nbytes == 0)) {
         THROW_ERR_MSG(Fam_InvalidOption_Exception, "Invalid Options");
     }
 
     ret = validate_item(descriptor);
-    FAM_PROFILE_END_ALLOCATOR(fam_put_blocking);
-    FAM_PROFILE_START_OPS(fam_put_blocking);
+    //FAM_PROFILE_END_ALLOCATOR(fam_put_blocking);
     if (ret == 0) {
         ret = famOps->put_blocking(local, descriptor, offset, nbytes);
     }
@@ -5147,6 +5172,15 @@ void fam::fam_quiet() {
     pimpl_->fam_quiet();
     RETURN_WITH_FAM_EXCEPTION
 }
+
+
+#ifdef FAM_PROFILE
+void fam::fam_reset_profile() {
+    TRY_CATCH_BEGIN
+    pimpl_->fam_reset_profile();
+    RETURN_WITH_FAM_EXCEPTION
+}
+#endif
 
 /**
  * fam() - constructor for fam class

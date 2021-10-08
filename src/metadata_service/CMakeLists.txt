@@ -24,12 +24,19 @@ execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/build/bin/
 	--plugin=protoc-gen-grpc=${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/build/bin/grpc_cpp_plugin ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_rpc.proto
                 COMMAND  ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/build/bin/protoc --cpp_out=${CMAKE_CURRENT_SOURCE_DIR} --proto_path=${CMAKE_CURRENT_SOURCE_DIR}                       ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_rpc.proto)
 
+set(LIBOPENFAM_SRC
+  ${LIBOPENFAM_SRC}
+  ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_mercury_rpc.cpp
+  PARENT_SCOPE
+  )
+
 set(CIS_SERVER_SRC
   ${CIS_SERVER_SRC}
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_rpc.grpc.pb.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_rpc.pb.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_service_direct.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_service_client.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_mercury_rpc.cpp
   PARENT_SCOPE
   )
 
@@ -39,6 +46,7 @@ set(MEMORY_SERVER_SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_rpc.pb.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_service_direct.cpp  
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_service_client.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_mercury_rpc.cpp
   PARENT_SCOPE
   )
 
@@ -57,5 +65,6 @@ set(METADATA_SERVER_SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_rpc.pb.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_service_direct.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_service_server.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/fam_metadata_mercury_rpc.cpp
   PARENT_SCOPE
   )

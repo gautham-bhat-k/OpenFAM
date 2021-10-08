@@ -36,6 +36,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <future>
 
 #include "common/fam_internal.h"
 #include "common/fam_libfabric.h"
@@ -161,6 +162,7 @@ int Fam_Ops_Libfabric::initialize() {
         }
     }
 
+
     // Insert the memory server address into address vector
     // Only if it is not source
     if (!isSource) {
@@ -169,6 +171,16 @@ int Fam_Ops_Libfabric::initialize() {
             message << "Libfabric initialize: memory server name not specified";
             THROW_ERR_MSG(Fam_Datapath_Exception, message.str().c_str());
         }
+        putCallCountArray = new int[numMemoryNodes];
+	getCallCountArray = new int[numMemoryNodes];
+	fetchCallCountArray = new int[numMemoryNodes];
+	setCallCountArray = new int[numMemoryNodes];
+
+       	std::memset(putCallCountArray, 0, sizeof(int) * numMemoryNodes);
+	std::memset(getCallCountArray, 0, sizeof(int) * numMemoryNodes);
+	std::memset(fetchCallCountArray, 0, sizeof(int) * numMemoryNodes);
+	std::memset(setCallCountArray, 0, sizeof(int) * numMemoryNodes);
+
         size_t memServerInfoSize = 0;
         ret = famAllocator->get_memserverinfo_size(&memServerInfoSize);
         if (ret < 0) {
@@ -192,7 +204,6 @@ int Fam_Ops_Libfabric::initialize() {
             size_t addrSize;
             void *nodeAddr;
             uint64_t fiAddrsSize = fiAddrs->size();
-            auto fiAddrsItr = fiAddrs->begin();
 
             while (bufPtr < memServerInfoSize) {
                 memcpy(&nodeId, ((char *)memServerInfoBuffer + bufPtr),
@@ -230,14 +241,13 @@ int Fam_Ops_Libfabric::initialize() {
                 }
 
                 // Place the fi_addr_t at nodeId index of fiAddrs vector.
-                if (nodeId > fiAddrsSize) {
+                if (nodeId >= fiAddrsSize) {
                     // Increase the size of fiAddrs vector to accomodate
                     // nodeId larger than the current size.
                     fiAddrs->resize(nodeId + 512, FI_ADDR_UNSPEC);
                     fiAddrsSize = fiAddrs->size();
-                    fiAddrsItr = fiAddrs->begin();
                 }
-                fiAddrs->insert(fiAddrsItr + nodeId, tmpAddrV[0]);
+                fiAddrs->at(nodeId) = tmpAddrV[0];
             }
         }
     } else {
@@ -322,6 +332,11 @@ Fam_Context *Fam_Ops_Libfabric::get_context(Fam_Descriptor *descriptor) {
 
 void Fam_Ops_Libfabric::finalize() {
     fabric_finalize();
+#if 0 
+	for(int i=0; i<numMemoryNodes; i++) {
+	   cout << i << ", " << putCallCountArray[i] << ", " << getCallCountArray[i] << ", " << fetchCallCountArray[i] << ", " << setCallCountArray[i] << endl;
+	}
+#endif
     if (fiMrs != NULL) {
         for (auto mr : *fiMrs) {
             Fam_Region_Map_t *fiRegionMap = mr.second;
@@ -382,6 +397,7 @@ int Fam_Ops_Libfabric::put_blocking(void *local, Fam_Descriptor *descriptor,
     key = descriptor->get_key();
     offset += (uint64_t)descriptor->get_base_address();
     uint64_t nodeId = descriptor->get_memserver_id();
+    putCallCountArray[nodeId]++;    
     std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
     int ret = fabric_write(key, local, nbytes, offset, (*fiAddr)[nodeId],
                            get_context(descriptor));
@@ -396,6 +412,7 @@ int Fam_Ops_Libfabric::get_blocking(void *local, Fam_Descriptor *descriptor,
     key = descriptor->get_key();
     offset += (uint64_t)descriptor->get_base_address();
     uint64_t nodeId = descriptor->get_memserver_id();
+    getCallCountArray[nodeId]++;
     std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
     int ret = fabric_read(key, local, nbytes, offset, (*fiAddr)[nodeId],
                           get_context(descriptor));
@@ -633,10 +650,45 @@ void Fam_Ops_Libfabric::fence(Fam_Region_Descriptor *descriptor) {
     }
 }
 
+void Fam_Ops_Libfabric::check_progress(Fam_Region_Descriptor *descriptor) {
+    if (famContextModel == FAM_CONTEXT_DEFAULT) {
+
+        for (auto context : *defContexts) {
+            Fam_Context *famCtx = context.second;
+            uint64_t success = fi_cntr_read(famCtx->get_txCntr());
+            success += fi_cntr_read(famCtx->get_rxCntr());
+        }
+    }
+    return;
+}
+
 void Fam_Ops_Libfabric::quiet_context(Fam_Context *context = NULL) {
     if (famContextModel == FAM_CONTEXT_DEFAULT) {
-        for (auto context : *defContexts)
-            fabric_quiet(context.second);
+        std::list<std::shared_future<void>> resultList;
+        int err = 0;
+        std::string errmsg;
+        int exception_caught = 0;
+
+        for (auto context : *defContexts) {
+            std::future<void> result =
+                (std::async(std::launch::async, fabric_quiet, context.second));
+            resultList.push_back(result.share());
+        }
+        for (auto result : resultList) {
+
+            try {
+                result.get();
+            } catch (Fam_Exception &e) {
+                err = e.fam_error();
+                errmsg = e.fam_error_msg();
+                exception_caught = 1;
+            }
+        }
+
+        if (exception_caught == 1) {
+            THROW_ERRNO_MSG(Fam_Datapath_Exception, get_fam_error(err), errmsg);
+        }
+
     } else if (famContextModel == FAM_CONTEXT_REGION) {
         fabric_quiet(context);
     }
@@ -724,7 +776,7 @@ void Fam_Ops_Libfabric::atomic_set(Fam_Descriptor *descriptor, uint64_t offset,
     uint64_t key = descriptor->get_key();
     uint64_t nodeId = descriptor->get_memserver_id();
     offset += (uint64_t)descriptor->get_base_address();
-
+    setCallCountArray[nodeId]++;
     std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
     fabric_atomic(key, (void *)&value, offset, FI_ATOMIC_WRITE, FI_UINT64,
                   (*fiAddr)[nodeId], get_context(descriptor));
@@ -1430,7 +1482,7 @@ uint64_t Fam_Ops_Libfabric::atomic_fetch_add(Fam_Descriptor *descriptor,
     uint64_t key = descriptor->get_key();
     uint64_t nodeId = descriptor->get_memserver_id();
     offset += (uint64_t)descriptor->get_base_address();
-
+    fetchCallCountArray[nodeId]++;
     std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
     uint64_t old;
     fabric_fetch_atomic(key, (void *)&value, (void *)&old, offset, FI_SUM,
