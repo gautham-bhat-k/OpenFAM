@@ -189,10 +189,13 @@ Fam_Region_Item_Info Fam_CIS_Client::allocate(string name, size_t nbytes,
     STATUS_CHECK(CIS_Exception)
     Fam_Region_Item_Info info;
     info.regionId = res.regionid();
-    info.memoryServerId = res.memserver_id();
+    info.used_memsrv_cnt = res.memsrv_list_size();
     info.offset = res.offset();
-    info.key = res.key();
-    info.base = (void *)res.base();
+    for (uint64_t i = 0; i < info.used_memsrv_cnt; i++) {
+      info.memoryServerIds[i] = res.memsrv_list((int)i);
+      info.baseAddressList[i] = (void *)res.base_addr_list((int)i);
+      info.keys[i] = res.keys((int)i);
+    }
     return info;
 }
 
@@ -297,12 +300,14 @@ Fam_Region_Item_Info Fam_CIS_Client::lookup(string itemName, string regionName,
 
     Fam_Region_Item_Info info;
     info.regionId = res.regionid();
-    info.offset = res.offset();
-    info.key = FAM_KEY_UNINITIALIZED;
     info.size = res.size();
     info.perm = (mode_t)res.perm();
-    info.memoryServerId = res.memserver_id();
+    info.used_memsrv_cnt = res.memsrv_list_size();
     strncpy(info.name, (res.name()).c_str(), res.maxnamelen());
+    info.offset = res.offset();
+    for (uint64_t i = 0; i < info.used_memsrv_cnt; i++) {
+      info.memoryServerIds[i] = res.memsrv_list((int)i);
+    }
     return info;
 }
 
@@ -348,11 +353,17 @@ Fam_Region_Item_Info Fam_CIS_Client::check_permission_get_item_info(
     STATUS_CHECK(CIS_Exception)
 
     Fam_Region_Item_Info info;
-    info.key = res.key();
     info.base = (void *)res.base();
     info.size = res.size();
     info.perm = (mode_t)res.perm();
+    info.used_memsrv_cnt = res.memsrv_list_size();
     strncpy(info.name, (res.name()).c_str(), res.maxnamelen());
+    info.offset = res.offset();
+    for (uint64_t i = 0; i < info.used_memsrv_cnt; i++) {
+      info.memoryServerIds[i] = res.memsrv_list((int)i);
+      info.baseAddressList[i] = (void *)res.base_addr_list((int)i);
+      info.keys[i] = res.keys((int)i);
+    }
     return info;
 }
 
@@ -680,14 +691,14 @@ void Fam_CIS_Client::wait_for_restore(void *waitObj) {
 void *Fam_CIS_Client::fam_map(uint64_t regionId, uint64_t offset,
                               uint64_t memoryServerId, uint32_t uid,
                               uint32_t gid) {
-    FAM_UNIMPLEMENTED_GRPC()
-    return NULL;
+  FAM_UNIMPLEMENTED_MEMSRVMODEL();
+  return NULL;
 }
 
 void Fam_CIS_Client::fam_unmap(void *local, uint64_t regionId, uint64_t offset,
                                uint64_t memoryServerId, uint32_t uid,
                                uint32_t gid) {
-    FAM_UNIMPLEMENTED_GRPC()
+  FAM_UNIMPLEMENTED_MEMSRVMODEL();
 }
 
 void Fam_CIS_Client::acquire_CAS_lock(uint64_t offset,

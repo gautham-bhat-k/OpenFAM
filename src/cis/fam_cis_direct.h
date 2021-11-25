@@ -206,9 +206,15 @@ class Fam_CIS_Direct : public Fam_CIS {
         (name);
         return hashVal % memoryServerCount;
     }
+
     int create_region_failure_cleanup(
         std::vector<int> create_region_success_list,
         std::vector<Fam_Memory_Service *> memoryServiceList, uint64_t regionId);
+
+    int allocate_failure_cleanup(
+        std::vector<int> allocate_success_list,
+        std::vector<Fam_Memory_Service *> memoryServiceList, uint64_t regionId,
+        uint64_t *offsets);
 };
 
 } // namespace openfam

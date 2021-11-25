@@ -99,7 +99,7 @@ class Fam_Ops_Libfabric : public Fam_Ops {
      */
     void finalize();
 
-    void abort(int status);
+    void abort(int status) {}
 
     int put_blocking(void *local, Fam_Descriptor *descriptor, uint64_t offset,
                      uint64_t nbytes);
@@ -143,177 +143,287 @@ class Fam_Ops_Libfabric : public Fam_Ops {
                              uint64_t nElements, uint64_t *elementIndex,
                              uint64_t elementSize);
 
+    void quiet(Fam_Region_Descriptor *descriptor = NULL);
     void *copy(Fam_Descriptor *src, uint64_t srcOffset, Fam_Descriptor *dest,
-               uint64_t destOffset, uint64_t nbytes);
+               uint64_t destOffset, uint64_t nbytes) {
+      return NULL;
+    }
 
-    void wait_for_copy(void *waitObj);
+    void wait_for_copy(void *waitObj) {}
     void *backup(Fam_Descriptor *desc, char *outputFile);
     void *restore(char *inputFile, Fam_Descriptor *dest, uint64_t size);
     void wait_for_backup(void *waitObj);
     void wait_for_restore(void *waitObj);
-    void fence(Fam_Region_Descriptor *descriptor = NULL);
+    void fence(Fam_Region_Descriptor *descriptor = NULL) {}
 
-    void quiet(Fam_Region_Descriptor *descriptor = NULL);
     uint64_t progress();
-    void check_progress(Fam_Region_Descriptor *descriptor = NULL);
+    void check_progress(Fam_Region_Descriptor *descriptor = NULL) {}
 
-    void atomic_set(Fam_Descriptor *descriptor, uint64_t offset, int32_t value);
-    void atomic_set(Fam_Descriptor *descriptor, uint64_t offset, int64_t value);
     void atomic_set(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint32_t value);
+                    int32_t value) {}
     void atomic_set(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint64_t value);
-    void atomic_set(Fam_Descriptor *descriptor, uint64_t offset, float value);
-    void atomic_set(Fam_Descriptor *descriptor, uint64_t offset, double value);
+                    int64_t value) {}
     void atomic_set(Fam_Descriptor *descriptor, uint64_t offset,
-                    int128_t value);
+                    uint32_t value) {}
+    void atomic_set(Fam_Descriptor *descriptor, uint64_t offset,
+                    uint64_t value) {}
+    void atomic_set(Fam_Descriptor *descriptor, uint64_t offset, float value) {}
+    void atomic_set(Fam_Descriptor *descriptor, uint64_t offset, double value) {
+    }
+    void atomic_set(Fam_Descriptor *descriptor, uint64_t offset,
+                    int128_t value) {}
 
-    void atomic_add(Fam_Descriptor *descriptor, uint64_t offset, int32_t value);
-    void atomic_add(Fam_Descriptor *descriptor, uint64_t offset, int64_t value);
     void atomic_add(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint32_t value);
+                    int32_t value) {}
     void atomic_add(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint64_t value);
-    void atomic_add(Fam_Descriptor *descriptor, uint64_t offset, float value);
-    void atomic_add(Fam_Descriptor *descriptor, uint64_t offset, double value);
+                    int64_t value) {}
+    void atomic_add(Fam_Descriptor *descriptor, uint64_t offset,
+                    uint32_t value) {}
+    void atomic_add(Fam_Descriptor *descriptor, uint64_t offset,
+                    uint64_t value) {}
+    void atomic_add(Fam_Descriptor *descriptor, uint64_t offset, float value) {}
+    void atomic_add(Fam_Descriptor *descriptor, uint64_t offset, double value) {
+    }
 
     void atomic_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                         int32_t value);
+                         int32_t value) {}
     void atomic_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                         int64_t value);
+                         int64_t value) {}
     void atomic_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                         uint32_t value);
+                         uint32_t value) {}
     void atomic_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                         uint64_t value);
+                         uint64_t value) {}
     void atomic_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                         float value);
+                         float value) {}
     void atomic_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                         double value);
+                         double value) {}
 
-    void atomic_min(Fam_Descriptor *descriptor, uint64_t offset, int32_t value);
-    void atomic_min(Fam_Descriptor *descriptor, uint64_t offset, int64_t value);
     void atomic_min(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint32_t value);
+                    int32_t value) {}
     void atomic_min(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint64_t value);
-    void atomic_min(Fam_Descriptor *descriptor, uint64_t offset, float value);
-    void atomic_min(Fam_Descriptor *descriptor, uint64_t offset, double value);
+                    int64_t value) {}
+    void atomic_min(Fam_Descriptor *descriptor, uint64_t offset,
+                    uint32_t value) {}
+    void atomic_min(Fam_Descriptor *descriptor, uint64_t offset,
+                    uint64_t value) {}
+    void atomic_min(Fam_Descriptor *descriptor, uint64_t offset, float value) {}
+    void atomic_min(Fam_Descriptor *descriptor, uint64_t offset, double value) {
+    }
 
-    void atomic_max(Fam_Descriptor *descriptor, uint64_t offset, int32_t value);
-    void atomic_max(Fam_Descriptor *descriptor, uint64_t offset, int64_t value);
     void atomic_max(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint32_t value);
+                    int32_t value) {}
     void atomic_max(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint64_t value);
-    void atomic_max(Fam_Descriptor *descriptor, uint64_t offset, float value);
-    void atomic_max(Fam_Descriptor *descriptor, uint64_t offset, double value);
+                    int64_t value) {}
+    void atomic_max(Fam_Descriptor *descriptor, uint64_t offset,
+                    uint32_t value) {}
+    void atomic_max(Fam_Descriptor *descriptor, uint64_t offset,
+                    uint64_t value) {}
+    void atomic_max(Fam_Descriptor *descriptor, uint64_t offset, float value) {}
+    void atomic_max(Fam_Descriptor *descriptor, uint64_t offset, double value) {
+    }
 
     void atomic_and(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint32_t value);
+                    uint32_t value) {}
     void atomic_and(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint64_t value);
+                    uint64_t value) {}
 
-    void atomic_or(Fam_Descriptor *descriptor, uint64_t offset, uint32_t value);
-    void atomic_or(Fam_Descriptor *descriptor, uint64_t offset, uint64_t value);
+    void atomic_or(Fam_Descriptor *descriptor, uint64_t offset,
+                   uint32_t value) {}
+    void atomic_or(Fam_Descriptor *descriptor, uint64_t offset,
+                   uint64_t value) {}
 
     void atomic_xor(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint32_t value);
+                    uint32_t value) {}
     void atomic_xor(Fam_Descriptor *descriptor, uint64_t offset,
-                    uint64_t value);
+                    uint64_t value) {}
 
-    int32_t swap(Fam_Descriptor *descriptor, uint64_t offset, int32_t value);
-    int64_t swap(Fam_Descriptor *descriptor, uint64_t offset, int64_t value);
-    uint32_t swap(Fam_Descriptor *descriptor, uint64_t offset, uint32_t value);
-    uint64_t swap(Fam_Descriptor *descriptor, uint64_t offset, uint64_t value);
-    float swap(Fam_Descriptor *descriptor, uint64_t offset, float value);
-    double swap(Fam_Descriptor *descriptor, uint64_t offset, double value);
+    int32_t swap(Fam_Descriptor *descriptor, uint64_t offset, int32_t value) {
+      return 0;
+    }
+    int64_t swap(Fam_Descriptor *descriptor, uint64_t offset, int64_t value) {
+      return 0;
+    }
+    uint32_t swap(Fam_Descriptor *descriptor, uint64_t offset, uint32_t value) {
+      return 0;
+    }
+    uint64_t swap(Fam_Descriptor *descriptor, uint64_t offset, uint64_t value) {
+      return 0;
+    }
+    float swap(Fam_Descriptor *descriptor, uint64_t offset, float value) {
+      return 0;
+    }
+    double swap(Fam_Descriptor *descriptor, uint64_t offset, double value) {
+      return 0;
+    }
 
     int32_t compare_swap(Fam_Descriptor *descriptor, uint64_t offset,
-                         int32_t oldValue, int32_t newValue);
+                         int32_t oldValue, int32_t newValue) {
+      return 0;
+    }
     int64_t compare_swap(Fam_Descriptor *descriptor, uint64_t offset,
-                         int64_t oldValue, int64_t newValue);
+                         int64_t oldValue, int64_t newValue) {
+      return 0;
+    }
     uint32_t compare_swap(Fam_Descriptor *descriptor, uint64_t offset,
-                          uint32_t oldValue, uint32_t newValue);
+                          uint32_t oldValue, uint32_t newValue) {
+      return 0;
+    }
     uint64_t compare_swap(Fam_Descriptor *descriptor, uint64_t offset,
-                          uint64_t oldValue, uint64_t newValue);
+                          uint64_t oldValue, uint64_t newValue) {
+      return 0;
+    }
     int128_t compare_swap(Fam_Descriptor *descriptor, uint64_t offset,
-                          int128_t oldValue, int128_t newValue);
+                          int128_t oldValue, int128_t newValue) {
+      return 0;
+    }
 
-    int32_t atomic_fetch_int32(Fam_Descriptor *descriptor, uint64_t offset);
-    int64_t atomic_fetch_int64(Fam_Descriptor *descriptor, uint64_t offset);
-    uint32_t atomic_fetch_uint32(Fam_Descriptor *descriptor, uint64_t offset);
-    uint64_t atomic_fetch_uint64(Fam_Descriptor *descriptor, uint64_t offset);
-    float atomic_fetch_float(Fam_Descriptor *descriptor, uint64_t offset);
-    double atomic_fetch_double(Fam_Descriptor *descriptor, uint64_t offset);
+    int32_t atomic_fetch_int32(Fam_Descriptor *descriptor, uint64_t offset) {
+      return 0;
+    }
+    int64_t atomic_fetch_int64(Fam_Descriptor *descriptor, uint64_t offset) {
+      return 0;
+    }
+    uint32_t atomic_fetch_uint32(Fam_Descriptor *descriptor, uint64_t offset) {
+      return 0;
+    }
+    uint64_t atomic_fetch_uint64(Fam_Descriptor *descriptor, uint64_t offset) {
+      return 0;
+    }
+    float atomic_fetch_float(Fam_Descriptor *descriptor, uint64_t offset) {
+      return 0;
+    }
+    double atomic_fetch_double(Fam_Descriptor *descriptor, uint64_t offset) {
+      return 0;
+    }
 
-    int128_t atomic_fetch_int128(Fam_Descriptor *descriptor, uint64_t offset);
+    int128_t atomic_fetch_int128(Fam_Descriptor *descriptor, uint64_t offset) {
+      return 0;
+    }
 
     int32_t atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
-                             int32_t value);
+                             int32_t value) {
+      return 0;
+    }
     int64_t atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
                              int64_t value);
     uint32_t atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint32_t value);
+                              uint32_t value) {
+      return 0;
+    }
     uint64_t atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint64_t value);
+                              uint64_t value) {
+      return 0;
+    }
     float atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
-                           float value);
+                           float value) {
+      return 0;
+    }
     double atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
-                            double value);
+                            double value) {
+      return 0;
+    }
 
     int32_t atomic_fetch_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                                  int32_t value);
+                                  int32_t value) {
+      return 0;
+    }
     int64_t atomic_fetch_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                                  int64_t value);
+                                  int64_t value) {
+      return 0;
+    }
     uint32_t atomic_fetch_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                                   uint32_t value);
+                                   uint32_t value) {
+      return 0;
+    }
     uint64_t atomic_fetch_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                                   uint64_t value);
+                                   uint64_t value) {
+      return 0;
+    }
     float atomic_fetch_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                                float value);
+                                float value) {
+      return 0;
+    }
     double atomic_fetch_subtract(Fam_Descriptor *descriptor, uint64_t offset,
-                                 double value);
+                                 double value) {
+      return 0;
+    }
 
     int32_t atomic_fetch_min(Fam_Descriptor *descriptor, uint64_t offset,
-                             int32_t value);
+                             int32_t value) {
+      return 0;
+    }
     int64_t atomic_fetch_min(Fam_Descriptor *descriptor, uint64_t offset,
-                             int64_t value);
+                             int64_t value) {
+      return 0;
+    }
     uint32_t atomic_fetch_min(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint32_t value);
+                              uint32_t value) {
+      return 0;
+    }
     uint64_t atomic_fetch_min(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint64_t value);
+                              uint64_t value) {
+      return 0;
+    }
     float atomic_fetch_min(Fam_Descriptor *descriptor, uint64_t offset,
-                           float value);
+                           float value) {
+      return 0;
+    }
     double atomic_fetch_min(Fam_Descriptor *descriptor, uint64_t offset,
-                            double value);
+                            double value) {
+      return 0;
+    }
 
     int32_t atomic_fetch_max(Fam_Descriptor *descriptor, uint64_t offset,
-                             int32_t value);
+                             int32_t value) {
+      return 0;
+    }
     int64_t atomic_fetch_max(Fam_Descriptor *descriptor, uint64_t offset,
-                             int64_t value);
+                             int64_t value) {
+      return 0;
+    }
     uint32_t atomic_fetch_max(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint32_t value);
+                              uint32_t value) {
+      return 0;
+    }
     uint64_t atomic_fetch_max(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint64_t value);
+                              uint64_t value) {
+      return 0;
+    }
     float atomic_fetch_max(Fam_Descriptor *descriptor, uint64_t offset,
-                           float value);
+                           float value) {
+      return 0;
+    }
     double atomic_fetch_max(Fam_Descriptor *descriptor, uint64_t offset,
-                            double value);
+                            double value) {
+      return 0;
+    }
 
     uint32_t atomic_fetch_and(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint32_t value);
+                              uint32_t value) {
+      return 0;
+    }
     uint64_t atomic_fetch_and(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint64_t value);
+                              uint64_t value) {
+      return 0;
+    }
 
     uint32_t atomic_fetch_or(Fam_Descriptor *descriptor, uint64_t offset,
-                             uint32_t value);
+                             uint32_t value) {
+      return 0;
+    }
     uint64_t atomic_fetch_or(Fam_Descriptor *descriptor, uint64_t offset,
-                             uint64_t value);
+                             uint64_t value) {
+      return 0;
+    }
 
     uint32_t atomic_fetch_xor(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint32_t value);
+                              uint32_t value) {
+      return 0;
+    }
     uint64_t atomic_fetch_xor(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint64_t value);
+                              uint64_t value) {
+      return 0;
+    }
     /**
      * Routines to access protected members
      *
@@ -343,7 +453,8 @@ class Fam_Ops_Libfabric : public Fam_Ops {
         else
             return obj->second;
     };
-    Fam_Context *get_defaultCtx(Fam_Descriptor *descriptor) {
+#if 0
+	Fam_Context *get_defaultCtx(Fam_Descriptor *descriptor) {
         auto obj = defContexts->find(descriptor->get_memserver_id());
         if (obj == defContexts->end())
             THROW_ERR_MSG(Fam_Datapath_Exception,
@@ -351,13 +462,14 @@ class Fam_Ops_Libfabric : public Fam_Ops {
         else
             return obj->second;
     };
+#endif
     pthread_rwlock_t *get_mr_lock() { return &fiMrLock; };
 
     pthread_rwlock_t *get_memsrvaddr_lock() { return &fiMemsrvAddrLock; };
 
     pthread_mutex_t *get_ctx_lock() { return &ctxLock; };
 
-    Fam_Context *get_context(Fam_Descriptor *descriptor);
+    Fam_Context *get_context(Fam_Descriptor *descriptor, uint64_t nodeId);
 
     void quiet_context(Fam_Context *context);
 
@@ -378,6 +490,8 @@ class Fam_Ops_Libfabric : public Fam_Ops {
     };
 
     std::map<uint64_t, fi_addr_t> *get_fiMemsrvMap() { return fiMemsrvMap; }
+
+    std::map<uint64_t, Fam_Context *> *get_defcontexts() { return defContexts; }
 
   protected:
     // Server_Map name;

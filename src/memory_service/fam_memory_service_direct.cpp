@@ -575,7 +575,7 @@ void Fam_Memory_Service_Direct::get_atomic(uint64_t regionId,
     InpMsg.nodeAddrSize = nodeAddrSize;
     memcpy(&InpMsg.nodeAddr, nodeAddr, nodeAddrSize);
     InpMsg.dstDataGdesc.regionId = regionId;
-    InpMsg.dstDataGdesc.offset = srcOffset;
+    // InpMsg.dstDataGdesc.offset = srcOffset;
     InpMsg.offset = dstOffset;
     InpMsg.key = key;
     InpMsg.srcBaseAddr = srcBaseAddr;
@@ -617,7 +617,7 @@ void Fam_Memory_Service_Direct::put_atomic(
     InpMsg.nodeAddrSize = nodeAddrSize;
     memcpy(&InpMsg.nodeAddr, nodeAddr, nodeAddrSize);
     InpMsg.dstDataGdesc.regionId = regionId;
-    InpMsg.dstDataGdesc.offset = srcOffset;
+    // InpMsg.dstDataGdesc.offset = srcOffset;
     InpMsg.offset = dstOffset;
     InpMsg.key = key;
     InpMsg.srcBaseAddr = srcBaseAddr;
@@ -664,7 +664,7 @@ void Fam_Memory_Service_Direct::scatter_strided_atomic(
     InpMsg.nodeAddrSize = nodeAddrSize;
     memcpy(&InpMsg.nodeAddr, nodeAddr, nodeAddrSize);
     InpMsg.dstDataGdesc.regionId = regionId;
-    InpMsg.dstDataGdesc.offset = offset;
+    // InpMsg.dstDataGdesc.offset = offset;
     InpMsg.snElements = nElements;
     InpMsg.firstElement = firstElement;
     InpMsg.stride = stride;
@@ -709,7 +709,7 @@ void Fam_Memory_Service_Direct::gather_strided_atomic(
     InpMsg.nodeAddrSize = nodeAddrSize;
     memcpy(&InpMsg.nodeAddr, nodeAddr, nodeAddrSize);
     InpMsg.dstDataGdesc.regionId = regionId;
-    InpMsg.dstDataGdesc.offset = offset;
+    // InpMsg.dstDataGdesc.offset = offset;
     InpMsg.snElements = nElements;
     InpMsg.firstElement = firstElement;
     InpMsg.stride = stride;
@@ -753,7 +753,7 @@ void Fam_Memory_Service_Direct::scatter_indexed_atomic(
     InpMsg.nodeAddrSize = nodeAddrSize;
     memcpy(&InpMsg.nodeAddr, nodeAddr, nodeAddrSize);
     InpMsg.dstDataGdesc.regionId = regionId;
-    InpMsg.dstDataGdesc.offset = offset;
+    // InpMsg.dstDataGdesc.offset = offset;
     InpMsg.inElements = nElements;
     InpMsg.ielementSize = elementSize;
     InpMsg.key = key;
@@ -795,7 +795,7 @@ void Fam_Memory_Service_Direct::gather_indexed_atomic(
     InpMsg.nodeAddrSize = nodeAddrSize;
     memcpy(&InpMsg.nodeAddr, nodeAddr, nodeAddrSize);
     InpMsg.dstDataGdesc.regionId = regionId;
-    InpMsg.dstDataGdesc.offset = offset;
+    // InpMsg.dstDataGdesc.offset = offset;
     InpMsg.inElements = nElements;
     InpMsg.ielementSize = elementSize;
     InpMsg.key = key;

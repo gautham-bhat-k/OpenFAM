@@ -26,7 +26,10 @@ metadata_path: /dev/shm/
 # Flag to enable or disable region spanning. By default, it is set to true.
 enable_region_spanning: true
 
+enable_dataitem_interleaving: true
+
 # If region spanning is enabled, obtain the value for region_span_size_per_memoryserver.
 # Default value is 1GB.
-region_span_size_per_memoryserver: 1073741824
+region_span_size_per_memoryserver: 1048576
+dataitem_span_size_per_memoryserver: 16384
 

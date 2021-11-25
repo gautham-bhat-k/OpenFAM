@@ -182,7 +182,7 @@ add_definitions(-DOPENFAM_VERSION="${VERSION_STR}")
 # add source code
 #
 add_subdirectory(src)
-add_subdirectory(test/unit-test)
+#add_subdirectory(test/unit-test)
 add_subdirectory(test/reg-test)
 add_subdirectory(test/multi-memnode-test)
 add_subdirectory(test/maxconfig)

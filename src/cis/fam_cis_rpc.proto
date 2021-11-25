@@ -208,6 +208,10 @@ message Fam_Dataitem_Response {
     uint64 maxnamelen = 9;
     uint64 perm = 10;
     uint64 memserver_id = 11;
+	repeated uint64 keys = 12;
+	repeated uint64 base_addr_list = 13;
+	repeated uint64 memsrv_list = 14;
+	repeated uint64 memsrv_cnt = 15;
 }
 
 message Fam_Copy_Request {

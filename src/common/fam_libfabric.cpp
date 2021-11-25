@@ -583,6 +583,55 @@ int fabric_retry(Fam_Context *famCtx, ssize_t ret, uint32_t *retry_cnt) {
 
     return 0;
 }
+
+int fabric_read(uint64_t key, const void *local, size_t nbytes, uint64_t offset,
+                fi_addr_t fiAddr, Fam_Context *famCtx) {
+
+  struct iovec iov = { .iov_base = (void *)local, .iov_len = nbytes };
+
+  struct fi_rma_iov rma_iov = { .addr = offset, .len = nbytes, .key = key };
+
+  struct fi_context *ctx = new struct fi_context();
+  memset(ctx, 0, sizeof(struct fi_context));
+  ctx->internal[2] = (void *)1;
+
+  struct fi_msg_rma msg = { .msg_iov = &iov,
+                            .desc = 0,
+                            .iov_count = 1,
+                            .addr = fiAddr,
+                            .rma_iov = &rma_iov,
+                            .rma_iov_count = 1,
+                            .context = ctx,
+                            .data = 0 };
+
+  ssize_t ret;
+  uint32_t retry_cnt = 0;
+  uint64_t incr = 0;
+
+  // Take Fam_Context read lock
+  famCtx->aquire_RDLock();
+
+  try {
+    do {
+      FI_CALL(ret, fi_readmsg, famCtx->get_ep(), &msg, FI_COMPLETION);
+    } while (fabric_retry(famCtx, ret, &retry_cnt));
+
+    famCtx->inc_num_rx_ops();
+    incr++;
+    ret = fabric_completion_wait(famCtx, ctx, 0);
+  }
+  catch (...) {
+    famCtx->inc_num_rx_fail_cnt(incr);
+    // Release Fam_Context read lock
+    famCtx->release_lock();
+    throw;
+  }
+  // Release Fam_Context read lock
+  famCtx->release_lock();
+  delete ctx;
+  return (int)ret;
+}
+
 // ioType: Send (0), Recv (1)
 int fabric_completion_wait(Fam_Context *famCtx, fi_context *ctx, int ioType) {
 
@@ -684,7 +733,6 @@ int fabric_completion_wait(Fam_Context *famCtx, fi_context *ctx, int ioType) {
     return 0;
 }
 
-/*
 int fabric_completion_wait_multictx(Fam_Context *famCtx, fi_context *ctx,
                                     int64_t count) {
     LIBFABRIC_PROFILE_START_OPS()
@@ -736,7 +784,6 @@ int fabric_completion_wait_multictx(Fam_Context *famCtx, fi_context *ctx,
     LIBFABRIC_PROFILE_END_OPS(fabric_completion_wait_multictx)
     return 0;
 }
-*/
 
 /*
  * fabric write message blocking
@@ -749,114 +796,6 @@ int fabric_completion_wait_multictx(Fam_Context *famCtx, fi_context *ctx,
  * @param famCtx - Pointer to Fam_Context
  * @return - {true(0), false(1), errNo(<0)}
  */
-int fabric_write(uint64_t key, const void *local, size_t nbytes,
-                 uint64_t offset, fi_addr_t fiAddr, Fam_Context *famCtx) {
-
-    struct iovec iov = {.iov_base = (void *)local, .iov_len = nbytes};
-
-    struct fi_rma_iov rma_iov = {.addr = offset, .len = nbytes, .key = key};
-
-    struct fi_context *ctx = new struct fi_context();
-    memset(ctx, 0, sizeof(struct fi_context));
-    ctx->internal[2] = (void *)1;
-
-    struct fi_msg_rma msg = {.msg_iov = &iov,
-                             .desc = 0,
-                             .iov_count = 1,
-                             .addr = fiAddr,
-                             .rma_iov = &rma_iov,
-                             .rma_iov_count = 1,
-                             .context = ctx,
-                             .data = 0};
-
-    ssize_t ret;
-    uint32_t retry_cnt = 0;
-    uint64_t incr = 0;
-
-    // Take Fam_Context read lock
-    famCtx->aquire_RDLock();
-
-    try {
-        do {
-            FI_CALL(ret, fi_writemsg, famCtx->get_ep(), &msg,
-                    FI_COMPLETION | FI_DELIVERY_COMPLETE);
-        } while (fabric_retry(famCtx, ret, &retry_cnt));
-
-        famCtx->inc_num_tx_ops();
-        incr++;
-        ret = fabric_completion_wait(famCtx, ctx, 0);
-    } catch (...) {
-        famCtx->inc_num_tx_fail_cnt(incr);
-        // Release Fam_Context read lock
-        famCtx->release_lock();
-        throw;
-    }
-
-    // Release Fam_Context read lock
-    famCtx->release_lock();
-    delete ctx;
-
-    return (int)ret;
-}
-
-/*
- * Fabric read message blocking
- * @param key - key of the memory region
- * @param local - pointer to the local memory region
- * @param nbytes - number of the bytes to be read from memory region
- *                 registered with key
- * @param offset - offset to the local memory address
- * @param fiAddr - fi_addr_t address
- * @param famCtx - Pointer to Fam_Context
- * @return - {true(0), false(1), errNo(<0)}
- */
-int fabric_read(uint64_t key, const void *local, size_t nbytes, uint64_t offset,
-                fi_addr_t fiAddr, Fam_Context *famCtx) {
-
-    struct iovec iov = {.iov_base = (void *)local, .iov_len = nbytes};
-
-    struct fi_rma_iov rma_iov = {.addr = offset, .len = nbytes, .key = key};
-
-    struct fi_context *ctx = new struct fi_context();
-    memset(ctx, 0, sizeof(struct fi_context));
-    ctx->internal[2] = (void *)1;
-
-    struct fi_msg_rma msg = {.msg_iov = &iov,
-                             .desc = 0,
-                             .iov_count = 1,
-                             .addr = fiAddr,
-                             .rma_iov = &rma_iov,
-                             .rma_iov_count = 1,
-                             .context = ctx,
-                             .data = 0};
-
-    ssize_t ret;
-    uint32_t retry_cnt = 0;
-    uint64_t incr = 0;
-
-    // Take Fam_Context read lock
-    famCtx->aquire_RDLock();
-
-    try {
-        do {
-            FI_CALL(ret, fi_readmsg, famCtx->get_ep(), &msg, FI_COMPLETION);
-        } while (fabric_retry(famCtx, ret, &retry_cnt));
-
-        famCtx->inc_num_rx_ops();
-        incr++;
-        ret = fabric_completion_wait(famCtx, ctx, 0);
-    } catch (...) {
-        famCtx->inc_num_rx_fail_cnt(incr);
-        // Release Fam_Context read lock
-        famCtx->release_lock();
-        throw;
-    }
-    // Release Fam_Context read lock
-    famCtx->release_lock();
-    delete ctx;
-    return (int)ret;
-}
-
 int fabric_read_write_multi_msg(uint64_t count, size_t iov_limit,
                                 fi_addr_t fiAddr, Fam_Context *famCtx,
                                 struct iovec *iov, struct fi_rma_iov *rma_iov,
@@ -869,7 +808,6 @@ int fabric_read_write_multi_msg(uint64_t count, size_t iov_limit,
     int64_t count_remain = count;
     ssize_t ret = 0;
     uint64_t flags = 0;
-
     flags = (block ? FI_COMPLETION : 0);
     flags |= ((block && write) ? FI_DELIVERY_COMPLETE : 0);
 
@@ -883,7 +821,6 @@ int fabric_read_write_multi_msg(uint64_t count, size_t iov_limit,
     famCtx->aquire_RDLock();
 
     for (int64_t j = 0; j < iteration; j++) {
-
         struct fi_msg_rma msg = {.msg_iov = &iov[j * iov_limit],
                                  .desc = 0,
                                  .iov_count = MIN(iov_limit, count_remain),
@@ -894,7 +831,6 @@ int fabric_read_write_multi_msg(uint64_t count, size_t iov_limit,
                                  .data = 0};
 
         uint32_t retry_cnt = 0;
-
         try {
             do {
                 if (write) {
@@ -950,422 +886,54 @@ int fabric_read_write_multi_msg(uint64_t count, size_t iov_limit,
  *  @param base - base address of remote memory
  *  @return - {true(0), false(1), errNo(<0)}
  */
-int fabric_scatter_stride_blocking(uint64_t key, const void *local,
-                                   size_t nbytes, uint64_t first,
-                                   uint64_t count, uint64_t stride,
-                                   fi_addr_t fiAddr, Fam_Context *famCtx,
-                                   size_t iov_limit, uint64_t base) {
+int fabric_write(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
+                 fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
+                 uint64_t base, bool block) {
 
-    struct iovec *iov = new iovec[count];
-    struct fi_rma_iov *rma_iov = new fi_rma_iov[count];
+  struct iovec *iov = new iovec[ioInfo.size()];
+  struct fi_rma_iov *rma_iov = new fi_rma_iov[ioInfo.size()];
 
     int ret = 0;
-
-    for (uint64_t i = 0; i < count; i++) {
-        iov[i].iov_base = (void *)((uint64_t)local + (i * nbytes));
-        iov[i].iov_len = nbytes;
-
-        rma_iov[i].addr = base + first * nbytes + (i * stride) * nbytes;
-        rma_iov[i].len = nbytes;
-        rma_iov[i].key = key;
+    for (int i = 0; i < (int)ioInfo.size(); i++) {
+      iov[i] = ioInfo[i].first;
+      rma_iov[i] = ioInfo[i].second;
     }
 
-    ret = fabric_read_write_multi_msg(count, iov_limit, fiAddr, famCtx, iov,
-                                      rma_iov, 1, 1);
+    if (block) {
+      ret = fabric_read_write_multi_msg(ioInfo.size(), iov_limit, fiAddr,
+                                        famCtx, iov, rma_iov, 1, 1);
+    } else {
+      ret = fabric_read_write_multi_msg(ioInfo.size(), iov_limit, fiAddr,
+                                        famCtx, iov, rma_iov, 1, 0);
+    }
     delete iov;
     delete rma_iov;
-
     return ret;
 }
 
-/*
- *  Fabric gather stride blocking
- *  @param key - key of the memory region
- *  @param local - pointer to the local memory region
- *  @param nbytes - size of each element in bytes to be read from memory region
- *  registered with key
- *  @param first - offset of first element in FAM to fetch for the stride access
- *  @param count - number of elements to be gathered to the local memory
- *  @param stride - stride size in element
- *  registered with key
- *  @param offset - offset to the local memory address
- *  @param fiAddr - fi_addr_t address
- *  @param famCtx - Pointer to Fam_Context
- *  @param base - base address of remote memory
- *  @return - {true(0), false(1), errNo(<0)}
- */
+int fabric_read(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
+                fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
+                uint64_t base, bool block) {
 
-int fabric_gather_stride_blocking(uint64_t key, const void *local,
-                                  size_t nbytes, uint64_t first, uint64_t count,
-                                  uint64_t stride, fi_addr_t fiAddr,
-                                  Fam_Context *famCtx, size_t iov_limit,
-                                  uint64_t base) {
-
-    struct iovec *iov = new iovec[count];
-    struct fi_rma_iov *rma_iov = new fi_rma_iov[count];
+  struct iovec *iov = new iovec[ioInfo.size()];
+  struct fi_rma_iov *rma_iov = new fi_rma_iov[ioInfo.size()];
 
     int ret = 0;
-
-    for (uint64_t i = 0; i < count; i++) {
-        iov[i].iov_base = (void *)((uint64_t)local + (i * nbytes));
-        iov[i].iov_len = nbytes;
-
-        rma_iov[i].addr = base + first * nbytes + (i * stride) * nbytes;
-        rma_iov[i].len = nbytes;
-        rma_iov[i].key = key;
+    for (int i = 0; i < (int)ioInfo.size(); i++) {
+      iov[i] = ioInfo[i].first;
+      rma_iov[i] = ioInfo[i].second;
     }
 
-    ret = fabric_read_write_multi_msg(count, iov_limit, fiAddr, famCtx, iov,
-                                      rma_iov, 0, 1);
-
+    if (block) {
+      ret = fabric_read_write_multi_msg(ioInfo.size(), iov_limit, fiAddr,
+                                        famCtx, iov, rma_iov, 0, 1);
+    } else {
+      ret = fabric_read_write_multi_msg(ioInfo.size(), iov_limit, fiAddr,
+                                        famCtx, iov, rma_iov, 0, 0);
+    }
     delete iov;
     delete rma_iov;
-
     return ret;
-}
-
-/*
- *  fabric scatter index blocking
- *  @param key - key of the memory region
- *  @param local - pointer to the local memory region
- *  @param nbytes - size of each element in bytes to be written to memory region
- *  registered with key
- *  @param count - number of elements to be scattered from local memory
- *  @param index - An array containing element indexes.
- *  @param fiAddr - fi_addr_t address
- *  @param famCtx - Pointer to Fam_Context
- *  @param base - base address of remote memory
- *  @return - {true(0), false(1), errNo(<0)}
- */
-int fabric_scatter_index_blocking(uint64_t key, const void *local,
-                                  size_t nbytes, uint64_t *index,
-                                  uint64_t count, fi_addr_t fiAddr,
-                                  Fam_Context *famCtx, size_t iov_limit,
-                                  uint64_t base) {
-
-    struct iovec *iov = new iovec[count];
-    struct fi_rma_iov *rma_iov = new fi_rma_iov[count];
-
-    int ret = 0;
-
-    for (uint64_t i = 0; i < count; i++) {
-        iov[i].iov_base = (void *)((uint64_t)local + (i * nbytes));
-        iov[i].iov_len = nbytes;
-        rma_iov[i].addr = base + index[i] * nbytes;
-        rma_iov[i].len = nbytes;
-        rma_iov[i].key = key;
-    }
-
-    ret = fabric_read_write_multi_msg(count, iov_limit, fiAddr, famCtx, iov,
-                                      rma_iov, 1, 1);
-
-    delete iov;
-    delete rma_iov;
-
-    return ret;
-}
-
-/*
- *  Fabric gather index blocking
- *  @param key - key of the memory region
- *  @param local - pointer to the local memory region
- *  @param nbytes - size of each element in bytes to be read from memory region
- *  registered with key
- *  @param count - number of elements to be gathered to the local memory
- *  @param index - An array containing element indexes.
- *  @param fiAddr - fi_addr_t address
- *  @param famCtx - Pointer to Fam_Context
- *  @param base - base address of remote memory
- *  @return - {true(0), false(1), errNo(<0)}
- */
-int fabric_gather_index_blocking(uint64_t key, const void *local, size_t nbytes,
-                                 uint64_t *index, uint64_t count,
-                                 fi_addr_t fiAddr, Fam_Context *famCtx,
-                                 size_t iov_limit, uint64_t base) {
-
-    struct iovec *iov = new iovec[count];
-    struct fi_rma_iov *rma_iov = new fi_rma_iov[count];
-
-    int ret = 0;
-
-    for (uint64_t i = 0; i < count; i++) {
-        iov[i].iov_base = (void *)((uint64_t)local + (i * nbytes));
-        iov[i].iov_len = nbytes;
-
-        rma_iov[i].addr = base + index[i] * nbytes;
-        rma_iov[i].len = nbytes;
-        rma_iov[i].key = key;
-    }
-
-    ret = fabric_read_write_multi_msg(count, iov_limit, fiAddr, famCtx, iov,
-                                      rma_iov, 0, 1);
-
-    delete iov;
-    delete rma_iov;
-
-    return ret;
-}
-
-/*
- * fabric write message nonblocking
- * @param key - key of the memory region
- * @param local - pointer to the local memory region
- * @param nbytes - number of the bytes to be written to memory region
- * registered with key
- * @param offset - offset to the local memory address
- * @param fiAddr - fi_addr_t address
- * @param famCtx - Pointer to Fam_Context
- * @return - {true(0), false(1), errNo(<0)}
- */
-void fabric_write_nonblocking(uint64_t key, const void *local, size_t nbytes,
-                              uint64_t offset, fi_addr_t fiAddr,
-                              Fam_Context *famCtx) {
-
-    struct iovec iov = {.iov_base = (void *)local, .iov_len = nbytes};
-
-    struct fi_rma_iov rma_iov = {.addr = offset, .len = nbytes, .key = key};
-
-    struct fi_msg_rma msg = {.msg_iov = &iov,
-                             .desc = 0,
-                             .iov_count = 1,
-                             .addr = fiAddr,
-                             .rma_iov = &rma_iov,
-                             .rma_iov_count = 1,
-                             .context = NULL,
-                             .data = 0};
-
-    // Take Fam_Context read lock
-    famCtx->aquire_RDLock();
-
-    ssize_t ret;
-    uint32_t retry_cnt = 0;
-
-    try {
-        do {
-            FI_CALL(ret, fi_writemsg, famCtx->get_ep(), &msg, 0);
-        } while (fabric_retry(famCtx, ret, &retry_cnt));
-        famCtx->inc_num_tx_ops();
-    } catch (...) {
-        // Release Fam_Context read lock
-        famCtx->release_lock();
-        throw;
-    }
-    // Release Fam_Context read lock
-    famCtx->release_lock();
-    return;
-}
-
-/*
- *  Fabric read message nonblocking
- *  @param key - key of the memory region
- *  @param local - pointer to the local memory region
- *  @param nbytes - number of the bytes to be read from memory region
- *  registered with key
- *  @param offset - offset to the local memory address
- *  @param fiAddr - fi_addr_t address
- *  @param famCtx - Pointer to Fam_Context
- *  @return - {true(0), false(1), errNo(<0)}
- */
-void fabric_read_nonblocking(uint64_t key, const void *local, size_t nbytes,
-                             uint64_t offset, fi_addr_t fiAddr,
-                             Fam_Context *famCtx) {
-
-    struct iovec iov = {.iov_base = (void *)local, .iov_len = nbytes};
-
-    struct fi_rma_iov rma_iov = {.addr = offset, .len = nbytes, .key = key};
-
-    struct fi_msg_rma msg = {.msg_iov = &iov,
-                             .desc = 0,
-                             .iov_count = 1,
-                             .addr = fiAddr,
-                             .rma_iov = &rma_iov,
-                             .rma_iov_count = 1,
-                             .context = NULL,
-                             .data = 0};
-
-    // Take Fam_Context read lock
-    famCtx->aquire_RDLock();
-
-    ssize_t ret;
-    uint32_t retry_cnt = 0;
-
-    try {
-        do {
-            FI_CALL(ret, fi_readmsg, famCtx->get_ep(), &msg, 0);
-        } while (fabric_retry(famCtx, ret, &retry_cnt));
-        famCtx->inc_num_rx_ops();
-    } catch (...) {
-        // Release Fam_Context read lock
-        famCtx->release_lock();
-        throw;
-    }
-    // Release Fam_Context read lock
-    famCtx->release_lock();
-    return;
-}
-
-/*
- *  fabric scatter stride message nonblocking
- *  @param key - key of the memory region
- *  @param local - pointer to the local memory region
- *  @param nbytes - size of each element in bytes to be written to memory region
- *  registered with key
- *  @param first - offset of first element in FAM to place for the stride access
- *  @param count - number of elements to be scattered from local memory
- *  @param stride - stride size in element
- *  @param fiAddr - fi_addr_t address
- *  @param famCtx - Pointer to Fam_Context
- *  @param base - base address of remote memory
- *  @return - {true(0), false(1), errNo(<0)}
- */
-void fabric_scatter_stride_nonblocking(uint64_t key, const void *local,
-                                       size_t nbytes, uint64_t first,
-                                       uint64_t count, uint64_t stride,
-                                       fi_addr_t fiAddr, Fam_Context *famCtx,
-                                       size_t iov_limit, uint64_t base) {
-
-    struct iovec *iov = new iovec[count];
-    struct fi_rma_iov *rma_iov = new fi_rma_iov[count];
-
-    for (uint64_t i = 0; i < count; i++) {
-        iov[i].iov_base = (void *)((uint64_t)local + (i * nbytes));
-        iov[i].iov_len = nbytes;
-
-        rma_iov[i].addr = base + first * nbytes + (i * stride) * nbytes;
-        rma_iov[i].len = nbytes;
-        rma_iov[i].key = key;
-    }
-
-    fabric_read_write_multi_msg(count, iov_limit, fiAddr, famCtx, iov, rma_iov,
-                                1, 0);
-
-    delete iov;
-    delete rma_iov;
-
-    return;
-}
-
-/*
- *  Fabric gather stride nonblocking
- *  @param key - key of the memory region
- *  @param local - pointer to the local memory region
- *  @param nbytes - size of each element in bytes to be read from memory region
- *  registered with key
- *  @param first - offset of first element in FAM to fetch for the stride access
- *  @param count - number of elements to be gathered to the local memory
- *  @param stride - stride size in element
- *  registered with key
- *  @param offset - offset to the local memory address
- *  @param fiAddr - fi_addr_t address
- *  @param famCtx - Pointer to Fam_Context
- *  @param base - base address of remote memory
- *  @return - {true(0), false(1), errNo(<0)}
- */
-
-void fabric_gather_stride_nonblocking(uint64_t key, const void *local,
-                                      size_t nbytes, uint64_t first,
-                                      uint64_t count, uint64_t stride,
-                                      fi_addr_t fiAddr, Fam_Context *famCtx,
-                                      size_t iov_limit, uint64_t base) {
-
-    struct iovec *iov = new iovec[count];
-    struct fi_rma_iov *rma_iov = new fi_rma_iov[count];
-
-    for (uint64_t i = 0; i < count; i++) {
-        iov[i].iov_base = (void *)((uint64_t)local + (i * nbytes));
-        iov[i].iov_len = nbytes;
-
-        rma_iov[i].addr = base + first * nbytes + (i * stride) * nbytes;
-        rma_iov[i].len = nbytes;
-        rma_iov[i].key = key;
-    }
-
-    fabric_read_write_multi_msg(count, iov_limit, fiAddr, famCtx, iov, rma_iov,
-                                0, 0);
-
-    delete iov;
-    delete rma_iov;
-
-    return;
-}
-
-/*
- *  fabric scatter index nonblocking
- *  @param key - key of the memory region
- *  @param local - pointer to the local memory region
- *  @param nbytes - size of each element in bytes to be written to memory region
- *  registered with key
- *  @param count - number of elements to be scattered from local memory
- *  @param index - An array containing element indexes.
- *  @param fiAddr - fi_addr_t address
- *  @param famCtx - Pointer to Fam_Context
- *  @param base - base address of remote memory
- *  @return - {true(0), false(1), errNo(<0)}
- */
-void fabric_scatter_index_nonblocking(uint64_t key, const void *local,
-                                      size_t nbytes, uint64_t *index,
-                                      uint64_t count, fi_addr_t fiAddr,
-                                      Fam_Context *famCtx, size_t iov_limit,
-                                      uint64_t base) {
-
-    struct iovec *iov = new iovec[count];
-    struct fi_rma_iov *rma_iov = new fi_rma_iov[count];
-
-    for (uint64_t i = 0; i < count; i++) {
-        iov[i].iov_base = (void *)((uint64_t)local + (i * nbytes));
-        iov[i].iov_len = nbytes;
-        rma_iov[i].addr = base + index[i] * nbytes;
-        rma_iov[i].len = nbytes;
-        rma_iov[i].key = key;
-    }
-
-    fabric_read_write_multi_msg(count, iov_limit, fiAddr, famCtx, iov, rma_iov,
-                                1, 0);
-
-    delete iov;
-    delete rma_iov;
-
-    return;
-}
-
-/*
- *  Fabric gather index nonblocking
- *  @param key - key of the memory region
- *  @param local - pointer to the local memory region
- *  @param nbytes - size of each element in bytes to be read from memory region
- *  registered with key
- *  @param count - number of elements to be gathered to the local memory
- *  @param index - An array containing element indexes.
- *  @param fiAddr - fi_addr_t address
- *  @param famCtx - Pointer to Fam_Context
- *  @param base - base address of remote memory
- *  @return - {true(0), false(1), errNo(<0)}
- */
-void fabric_gather_index_nonblocking(uint64_t key, const void *local,
-                                     size_t nbytes, uint64_t *index,
-                                     uint64_t count, fi_addr_t fiAddr,
-                                     Fam_Context *famCtx, size_t iov_limit,
-                                     uint64_t base) {
-
-    struct iovec *iov = new iovec[count];
-    struct fi_rma_iov *rma_iov = new fi_rma_iov[count];
-
-    for (uint64_t i = 0; i < count; i++) {
-        iov[i].iov_base = (void *)((uint64_t)local + (i * nbytes));
-        iov[i].iov_len = nbytes;
-
-        rma_iov[i].addr = base + index[i] * nbytes;
-        rma_iov[i].len = nbytes;
-        rma_iov[i].key = key;
-    }
-
-    fabric_read_write_multi_msg(count, iov_limit, fiAddr, famCtx, iov, rma_iov,
-                                0, 0);
-
-    delete iov;
-    delete rma_iov;
-
-    return;
 }
 
 /*
@@ -1490,7 +1058,6 @@ void fabric_get_quiet(Fam_Context *famCtx) {
     uint64_t rxLastFailCnt = famCtx->get_num_rx_fail_cnt();
     int timeout_wait_retry_cnt = 0;
     rxcnt = famCtx->get_num_rx_ops();
-
     do {
 
         FI_CALL(rxsuccess, fi_cntr_read, famCtx->get_rxCntr());
@@ -1629,7 +1196,97 @@ void fabric_atomic(uint64_t key, void *value, uint64_t offset, enum fi_op op,
 
     return;
 }
+#if 0
+int fabric_atomic_multi_msg(uint64_t count, size_t iov_limit,
+                                fi_addr_t fiAddr, Fam_Context *famCtx,
+                                struct iovec *iov, struct fi_rma_iov *rma_iov, 
+                                enum fi_op op, bool block) {
 
+    int64_t iteration = count / iov_limit;
+    if (count % iov_limit > 0)
+        iteration++;
+
+    int64_t count_remain = count;
+    ssize_t ret = 0;
+    uint64_t flags = 0;
+    flags = (block ? FI_COMPLETION : 0);
+    flags |= ((block) ? FI_DELIVERY_COMPLETE : 0);
+
+    struct fi_context *ctx = (block ? new struct fi_context() : NULL);
+    if (block) {
+        memset(ctx, 0, sizeof(struct fi_context));
+        ctx->internal[2] = (void *)iteration;
+    }
+
+    // Take Fam_Context read lock
+    famCtx->aquire_RDLock();
+
+    for (int64_t j = 0; j < iteration; j++) {
+		struct fi_msg_atomic msg = {.msg_iov = &iov,
+                                .desc = 0,
+                                .iov_count = MIN(iov_limit, count_remain),
+                                .addr = fiAddr,
+                                .rma_iov = &rma_iov[j * iov_limit],
+                                .rma_iov_count = 1,
+                                .datatype = datatype,
+                                .op = op,
+                                .context = (block ? ctx : NULL),
+                                .data = 0};
+
+
+        struct fi_msg_rma msg = {.msg_iov = &iov[j * iov_limit],
+                                 .desc = 0,
+                                 .iov_count = MIN(iov_limit, count_remain),
+                                 .addr = fiAddr,
+                                 .rma_iov = &rma_iov[j * iov_limit],
+                                 .rma_iov_count = MIN(iov_limit, count_remain),
+                                 .context = (block ? ctx : NULL),
+                                 .data = 0};
+
+        uint32_t retry_cnt = 0;
+		cout << "Base addr : " << iov[j * iov_limit].iov_base << " base value : " << *(int *)(iov[j * iov_limit].iov_base) << " Dest : " << rma_iov[j * iov_limit].addr << endl;
+        try {
+            do {
+                if (write) {
+                    FI_CALL(ret, fi_writemsg, famCtx->get_ep(), &msg, flags);
+                } else {
+                    FI_CALL(ret, fi_readmsg, famCtx->get_ep(), &msg, flags);
+                }
+            } while (fabric_retry(famCtx, ret, &retry_cnt));
+
+            if (write)
+                famCtx->inc_num_tx_ops();
+            else
+                famCtx->inc_num_rx_ops();
+        } catch (...) {
+            // Release Fam_Context read lock
+            famCtx->release_lock();
+            throw;
+        }
+        count_remain -= iov_limit;
+    }
+
+    if (block) {
+        try {
+            ret = fabric_completion_wait(famCtx, ctx, 0);
+        } catch (...) {
+            if (write)
+                famCtx->inc_num_tx_fail_cnt(1l);
+            else
+                famCtx->inc_num_rx_fail_cnt(1l);
+            // Release Fam_Context read lock
+            famCtx->release_lock();
+            throw;
+        }
+    }
+    // Release Fam_Context read lock
+    famCtx->release_lock();
+
+    if (block)
+        delete ctx;
+    return (int)ret;
+}
+#endif
 void fabric_fetch_atomic(uint64_t key, void *value, void *result,
                          uint64_t offset, enum fi_op op,
                          enum fi_datatype datatype, fi_addr_t fiAddr,

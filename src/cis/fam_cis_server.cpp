@@ -231,11 +231,13 @@ Fam_CIS_Server::resize_region(::grpc::ServerContext *context,
         return ::grpc::Status::OK;
     }
 
-    response->set_key(info.key);
     response->set_regionid(request->regionid());
     response->set_offset(info.offset);
-    response->set_base((uint64_t)info.base);
-    response->set_memserver_id(info.memoryServerId);
+    for (uint64_t i = 0; i < info.used_memsrv_cnt; i++) {
+      response->add_keys(info.keys[i]);
+      response->add_base_addr_list((uint64_t)info.baseAddressList[i]);
+      response->add_memsrv_list(info.memoryServerIds[i]);
+    }
     CIS_SERVER_PROFILE_END_OPS(allocate);
 
     // Return status OK
@@ -353,13 +355,15 @@ Fam_CIS_Server::lookup_region(::grpc::ServerContext *context,
         return ::grpc::Status::OK;
     }
 
-    response->set_memserver_id(info.memoryServerId);
     response->set_regionid(info.regionId);
-    response->set_offset(info.offset);
     response->set_size(info.size);
     response->set_perm(info.perm);
     response->set_name(info.name);
     response->set_maxnamelen(info.maxNameLen);
+    response->set_offset(info.offset);
+    for (uint64_t i = 0; i < info.used_memsrv_cnt; i++) {
+      response->add_memsrv_list(info.memoryServerIds[i]);
+    }
     // Return status OK
     CIS_SERVER_PROFILE_END_OPS(lookup);
     return ::grpc::Status::OK;
@@ -409,13 +413,16 @@ Fam_CIS_Server::lookup_region(::grpc::ServerContext *context,
         return ::grpc::Status::OK;
     }
 
-    response->set_key(info.key);
     response->set_size(info.size);
     response->set_perm(info.perm);
     response->set_name(info.name);
     response->set_maxnamelen(info.maxNameLen);
-    response->set_base((uint64_t)info.base);
-
+    response->set_offset(info.offset);
+    for (uint64_t i = 0; i < info.used_memsrv_cnt; i++) {
+      response->add_keys(info.keys[i]);
+      response->add_base_addr_list((uint64_t)info.baseAddressList[i]);
+      response->add_memsrv_list(info.memoryServerIds[i]);
+    }
     CIS_SERVER_PROFILE_END_OPS(check_permission_get_item_info);
 
     // Return status OK

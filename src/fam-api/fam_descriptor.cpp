@@ -44,71 +44,98 @@ class Fam_Descriptor::FamDescriptorImpl_ {
   public:
     FamDescriptorImpl_(Fam_Global_Descriptor globalDesc, uint64_t itemSize) {
         gDescriptor = globalDesc;
-        key = FAM_KEY_UNINITIALIZED;
+        // key = FAM_KEY_UNINITIALIZED;
+        keys = NULL;
         context = NULL;
-        base = NULL;
+        base_addr_list = NULL;
         desc_update_status = DESC_UNINITIALIZED;
         size = itemSize;
+        interleaveSize = 0;
         perm = 0;
         name = NULL;
+        memserver_ids = NULL;
+        used_memsrv_cnt = 0;
     }
 
     FamDescriptorImpl_(Fam_Global_Descriptor globalDesc) {
         gDescriptor = globalDesc;
-        key = FAM_KEY_UNINITIALIZED;
+        // key = FAM_KEY_UNINITIALIZED;
+        keys = NULL;
         context = NULL;
-        base = NULL;
+        base_addr_list = NULL;
         desc_update_status = DESC_UNINITIALIZED;
         size = 0;
+        interleaveSize = 0;
         perm = 0;
         name = NULL;
+        memserver_ids = NULL;
+        used_memsrv_cnt = 0;
     }
 
     FamDescriptorImpl_() {
         gDescriptor = {FAM_INVALID_REGION, 0};
-        key = FAM_KEY_UNINITIALIZED;
+        // key = FAM_KEY_UNINITIALIZED;
+        keys = NULL;
         context = NULL;
-        base = NULL;
+        base_addr_list = NULL;
         desc_update_status = DESC_UNINITIALIZED;
         size = 0;
+        interleaveSize = 0;
         perm = 0;
         name = NULL;
+        memserver_ids = NULL;
+        used_memsrv_cnt = 0;
     }
 
     ~FamDescriptorImpl_() {
         gDescriptor = {FAM_INVALID_REGION, 0};
-        key = FAM_KEY_UNINITIALIZED;
+        // key = FAM_KEY_UNINITIALIZED;
+        keys = NULL;
         context = NULL;
-        base = NULL;
+        base_addr_list = NULL;
         desc_update_status = DESC_INVALID;
         size = 0;
+        interleaveSize = 0;
         perm = 0;
         name = NULL;
+        memserver_ids = NULL;
+        used_memsrv_cnt = 0;
     }
 
     Fam_Global_Descriptor get_global_descriptor() { return this->gDescriptor; }
 
-    void bind_key(uint64_t tempKey) {
-        if (key == FAM_KEY_UNINITIALIZED)
-            key = tempKey;
+    void bind_keys(uint64_t *tempKeys, uint64_t cnt) {
+      if (!keys) {
+        keys = (uint64_t *)malloc(cnt * sizeof(uint64_t));
+        memcpy(keys, tempKeys, sizeof(uint64_t) * cnt);
+      }
         //      key = check_permissions_get_key(gDescriptor.regionID,
         //      gDescriptor.offset);
     }
 
-    uint64_t get_key() { return key; }
+    uint64_t *get_keys() { return keys; }
 
     void set_context(void *ctx) { context = ctx; }
 
     void *get_context() { return context; }
 
-    void set_base_address(void *address) { base = address; }
+    void set_base_address_list(void **addressList, uint64_t cnt) {
+      base_addr_list = (void **)malloc(cnt * sizeof(uint64_t));
+      memcpy(base_addr_list, addressList, sizeof(uint64_t) * cnt);
+    }
 
-    void *get_base_address() { return base; }
+    void **get_base_address_list() { return base_addr_list; }
 
     void set_desc_status(int update_status) {
         desc_update_status = update_status;
     }
     int get_desc_status() { return desc_update_status; }
+
+    void set_interleave_size(uint64_t interleaveSize_) {
+      interleaveSize = interleaveSize_;
+    }
+
+    uint64_t get_interleave_size() { return interleaveSize; }
 
     void set_size(uint64_t itemSize) {
         if (size == 0)
@@ -131,20 +158,34 @@ class Fam_Descriptor::FamDescriptorImpl_ {
 
     char *get_name() { return name; }
 
+    void set_used_memsrv_cnt(uint64_t cnt) { used_memsrv_cnt = cnt; }
+
+    uint64_t get_used_memsrv_cnt() { return used_memsrv_cnt; }
+
+    void set_memserver_ids(uint64_t *ids) {
+      memserver_ids = (uint64_t *)malloc(used_memsrv_cnt * sizeof(uint64_t));
+      memcpy(memserver_ids, ids, used_memsrv_cnt * sizeof(uint64_t));
+    }
+
+    uint64_t *get_memserver_ids() { return memserver_ids; }
+#if 0
     uint64_t get_memserver_id() {
         return (gDescriptor.regionId) >> MEMSERVERID_SHIFT;
     }
-
+#endif
   private:
     Fam_Global_Descriptor gDescriptor;
     /* libfabric access key*/
-    uint64_t key;
+    uint64_t *keys;
     void *context;
-    void *base;
+    void **base_addr_list;
     int desc_update_status;
     mode_t perm;
     char *name;
+    uint64_t interleaveSize;
     uint64_t size;
+    uint64_t *memserver_ids;
+    uint64_t used_memsrv_cnt;
 };
 
 Fam_Descriptor::Fam_Descriptor(Fam_Global_Descriptor gDescriptor,
@@ -164,24 +205,36 @@ Fam_Global_Descriptor Fam_Descriptor::get_global_descriptor() {
     return fdimpl_->get_global_descriptor();
 }
 
-void Fam_Descriptor::bind_key(uint64_t tempkey) { fdimpl_->bind_key(tempkey); }
+void Fam_Descriptor::bind_keys(uint64_t *tempkeys, uint64_t cnt) {
+  fdimpl_->bind_keys(tempkeys, cnt);
+}
 
-uint64_t Fam_Descriptor::get_key() { return fdimpl_->get_key(); }
+uint64_t *Fam_Descriptor::get_keys() { return fdimpl_->get_keys(); }
 
 void Fam_Descriptor::set_context(void *ctx) { fdimpl_->set_context(ctx); }
 
 void *Fam_Descriptor::get_context() { return fdimpl_->get_context(); }
 
-void Fam_Descriptor::set_base_address(void *address) {
-    fdimpl_->set_base_address(address);
+void Fam_Descriptor::set_base_address_list(void **addressList, uint64_t cnt) {
+  fdimpl_->set_base_address_list(addressList, cnt);
 }
 
-void *Fam_Descriptor::get_base_address() { return fdimpl_->get_base_address(); }
+void **Fam_Descriptor::get_base_address_list() {
+  return fdimpl_->get_base_address_list();
+}
 
 void Fam_Descriptor::set_desc_status(int desc_update_status) {
     return fdimpl_->set_desc_status(desc_update_status);
 }
 int Fam_Descriptor::get_desc_status() { return fdimpl_->get_desc_status(); }
+
+void Fam_Descriptor::set_interleave_size(uint64_t interleaveSize_) {
+  return fdimpl_->set_interleave_size(interleaveSize_);
+}
+
+uint64_t Fam_Descriptor::get_interleave_size() {
+  return fdimpl_->get_interleave_size();
+}
 
 void Fam_Descriptor::set_size(uint64_t itemSize) {
     return fdimpl_->set_size(itemSize);
@@ -189,11 +242,30 @@ void Fam_Descriptor::set_size(uint64_t itemSize) {
 
 uint64_t Fam_Descriptor::get_size() { return fdimpl_->get_size(); }
 
+#if 0
 uint64_t Fam_Descriptor::get_memserver_id() {
     return fdimpl_->get_memserver_id();
 }
+#endif
+
 void Fam_Descriptor::set_perm(mode_t regionPerm) {
     fdimpl_->set_perm(regionPerm);
+}
+
+void Fam_Descriptor::set_used_memsrv_cnt(uint64_t cnt) {
+  return fdimpl_->set_used_memsrv_cnt(cnt);
+}
+
+uint64_t Fam_Descriptor::get_used_memsrv_cnt() {
+  return fdimpl_->get_used_memsrv_cnt();
+}
+
+void Fam_Descriptor::set_memserver_ids(uint64_t *ids) {
+  return fdimpl_->set_memserver_ids(ids);
+}
+
+uint64_t *Fam_Descriptor::get_memserver_ids() {
+  return fdimpl_->get_memserver_ids();
 }
 
 mode_t Fam_Descriptor::get_perm() { return fdimpl_->get_perm(); }

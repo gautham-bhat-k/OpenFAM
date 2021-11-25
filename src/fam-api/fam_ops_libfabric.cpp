@@ -223,7 +223,6 @@ int Fam_Ops_Libfabric::initialize() {
                 }
                 std::vector<fi_addr_t> tmpAddrV;
                 ret = fabric_insert_av((char *)nodeAddr, av, &tmpAddrV);
-
                 if (ret < 0) {
                     // TODO: Log error
                     return ret;
@@ -265,7 +264,6 @@ int Fam_Ops_Libfabric::initialize() {
                     << fabric_strerror(ret);
             THROW_ERR_MSG(Fam_Datapath_Exception, message.str().c_str());
         }
-
         // Save this context to defContexts on memoryserver
         defContexts->insert({0, tmpCtx});
     }
@@ -274,11 +272,12 @@ int Fam_Ops_Libfabric::initialize() {
     return 0;
 }
 
-Fam_Context *Fam_Ops_Libfabric::get_context(Fam_Descriptor *descriptor) {
+Fam_Context *Fam_Ops_Libfabric::get_context(Fam_Descriptor *descriptor,
+                                            uint64_t nodeId = 0) {
     std::ostringstream message;
     // Case - FAM_CONTEXT_DEFAULT
     if (famContextModel == FAM_CONTEXT_DEFAULT) {
-        uint64_t nodeId = descriptor->get_memserver_id();
+      // uint64_t *nodeIds = descriptor->get_memserver_ids();
         return get_defaultCtx(nodeId);
     } else if (famContextModel == FAM_CONTEXT_REGION) {
         // Case - FAM_CONTEXT_REGION
@@ -375,33 +374,1175 @@ void Fam_Ops_Libfabric::finalize() {
 
 int Fam_Ops_Libfabric::put_blocking(void *local, Fam_Descriptor *descriptor,
                                     uint64_t offset, uint64_t nbytes) {
-    std::ostringstream message;
-    // Write data into memory region with this key
-    uint64_t key;
-    key = descriptor->get_key();
-    offset += (uint64_t)descriptor->get_base_address();
-    uint64_t nodeId = descriptor->get_memserver_id();
-    std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
-    int ret = fabric_write(key, local, nbytes, offset, (*fiAddr)[nodeId],
-                           get_context(descriptor));
-    return ret;
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  // startServerIdx is the memory server Id index to which the given offset
+  // belong
+  uint64_t startServerIdx = ((offset / interleaveSize) % usedMemsrvCnt);
+  // startBlockIdx is the Interleave block index with the memory server
+  uint64_t startBlockIdx =
+      ((offset / interleaveSize) - startServerIdx) / usedMemsrvCnt;
+  // Displacement from the starting position of the interleave block
+  uint64_t displacement = offset % interleaveSize;
+
+  // Array of vector to accommodate IOs belonging to each memory server
+  std::vector<std::pair<iovec, fi_rma_iov> > writeIOVectors[usedMemsrvCnt];
+
+  int ret = 0;
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  // Current memory server Id index
+  uint64_t currentServerIndex = startServerIdx;
+  // Current interleave block index
+  uint64_t currentBlockIndex = startBlockIdx;
+  // Current remote location in FAM
+  uint64_t currentFamPtr = startBlockIdx * interleaveSize + displacement;
+  // Current Local pointer position
+  uint64_t currentLocalPtr = (uint64_t)local;
+  uint64_t writeSize = nbytes;
+  /*
+   * Starting from the given offset the iovec and fi_rma_iov structures are
+   * created for each data chunk of size equal
+   * to interleave size. The process is repeated until the last byte of the
+   * data. In the initial IO, the data chunk size
+   * may not be equal to th size of interleave block less than the interleave
+   * block as the given offset may be displaced
+   * from the starting posion of any interleave block.
+   */
+  do {
+    uint64_t availableSize =
+        (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+    struct iovec iov;
+    struct fi_rma_iov rma_iov;
+
+    if (writeSize > availableSize) {
+      iov.iov_base = (void *)currentLocalPtr;
+      iov.iov_len = availableSize;
+
+      rma_iov.addr =
+          (uint64_t)(base_addr_list[currentServerIndex]) + currentFamPtr;
+      rma_iov.len = availableSize;
+      rma_iov.key = keys[currentServerIndex];
+
+      writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      writeSize -= availableSize;
+      currentServerIndex++;
+      // If last memory server is reached roll back to first server and incement
+      // the interleave block by one
+      if (currentServerIndex == usedMemsrvCnt) {
+        currentServerIndex = 0;
+        currentBlockIndex++;
+      }
+      currentFamPtr = currentBlockIndex * interleaveSize;
+      currentLocalPtr += availableSize;
+    } else {
+      iov.iov_base = (void *)currentLocalPtr;
+      iov.iov_len = writeSize;
+
+      rma_iov.addr =
+          (uint64_t)(base_addr_list[currentServerIndex]) + currentFamPtr;
+      rma_iov.len = writeSize;
+      rma_iov.key = keys[currentServerIndex];
+
+      writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      currentLocalPtr += writeSize;
+      writeSize = 0;
+    }
+  } while (writeSize != 0);
+
+  /*
+   * Iterate over the array of vector for each memory server and perform write
+   * operation using libfabric
+   */
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!writeIOVectors[index].empty()) {
+      ret = fabric_write(writeIOVectors[index], (*fiAddr)[memServerIds[index]],
+                         get_context(descriptor, memServerIds[index]),
+                         fabric_iov_limit, (uint64_t)(base_addr_list[index]),
+                         true);
+    }
+  }
+  return ret;
 }
 
 int Fam_Ops_Libfabric::get_blocking(void *local, Fam_Descriptor *descriptor,
                                     uint64_t offset, uint64_t nbytes) {
-    std::ostringstream message;
-    // Write data into memory region with this key
-    uint64_t key;
-    key = descriptor->get_key();
-    offset += (uint64_t)descriptor->get_base_address();
-    uint64_t nodeId = descriptor->get_memserver_id();
-    std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
-    int ret = fabric_read(key, local, nbytes, offset, (*fiAddr)[nodeId],
-                          get_context(descriptor));
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx = ((offset / interleaveSize) % usedMemsrvCnt);
+  uint64_t startBlockIdx =
+      ((offset / interleaveSize) - startServerIdx) / usedMemsrvCnt;
+  uint64_t displacement = offset % interleaveSize;
+  std::vector<std::pair<iovec, fi_rma_iov> > readIOVectors[usedMemsrvCnt];
 
-    return ret;
+  int ret = 0;
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentServerIndex = startServerIdx;
+  uint64_t currentBlockIndex = startBlockIdx;
+  uint64_t currentFamPtr = startBlockIdx * interleaveSize + displacement;
+  uint64_t currentLocalPtr = (uint64_t)local;
+  uint64_t readSize = nbytes;
+  do {
+    uint64_t availableSize =
+        (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+    struct iovec iov;
+    struct fi_rma_iov rma_iov;
+
+    if (readSize > availableSize) {
+      iov.iov_base = (void *)currentLocalPtr;
+      iov.iov_len = availableSize;
+
+      rma_iov.addr =
+          (uint64_t)(base_addr_list[currentServerIndex]) + currentFamPtr;
+      rma_iov.len = availableSize;
+      rma_iov.key = keys[currentServerIndex];
+
+      readIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      readSize -= availableSize;
+      currentServerIndex++;
+      if (currentServerIndex == usedMemsrvCnt) {
+        currentServerIndex = 0;
+        currentBlockIndex++;
+      }
+      currentFamPtr = currentBlockIndex * interleaveSize;
+      currentLocalPtr += availableSize;
+    } else {
+      iov.iov_base = (void *)currentLocalPtr;
+      iov.iov_len = readSize;
+
+      rma_iov.addr =
+          (uint64_t)(base_addr_list[currentServerIndex]) + currentFamPtr;
+      rma_iov.len = readSize;
+      rma_iov.key = keys[currentServerIndex];
+
+      readIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      currentLocalPtr += readSize;
+      readSize = 0;
+    }
+  } while (readSize != 0);
+
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!readIOVectors[index].empty()) {
+      ret = fabric_read(readIOVectors[index], (*fiAddr)[memServerIds[index]],
+                        get_context(descriptor, memServerIds[index]),
+                        fabric_iov_limit, (uint64_t)(base_addr_list[index]),
+                        true);
+    }
+  }
+  return ret;
 }
 
+int Fam_Ops_Libfabric::scatter_blocking(void *local, Fam_Descriptor *descriptor,
+                                        uint64_t nElements,
+                                        uint64_t firstElement, uint64_t stride,
+                                        uint64_t elementSize) {
+
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx =
+      (((firstElement * elementSize) / interleaveSize) % usedMemsrvCnt);
+  uint64_t startBlockIdx =
+      (((firstElement * elementSize) / interleaveSize) - startServerIdx) /
+      usedMemsrvCnt;
+  uint64_t displacement = (firstElement * elementSize) % interleaveSize;
+  std::vector<std::pair<iovec, fi_rma_iov> > writeIOVectors[usedMemsrvCnt];
+
+  int ret = 0;
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentServerIndex = startServerIdx;
+  uint64_t currentBlockIndex = startBlockIdx;
+  uint64_t currentFamPtr = startBlockIdx * interleaveSize + displacement;
+  uint64_t currentLocalPtr = (uint64_t)local;
+
+  /* Each IO can be of size equal to interleave blcok size at max. Starting from
+   * the firstElement position for each element
+   * the iovec and fi_rma_iov structures are created and data size in each IO
+   * isequal to interleave size or less.
+   * The process is repeated until the last byte of the element. The same steps
+   * are then repetaed for all the elements in the given array.
+   */
+  for (int i = 0; i < (int)nElements; i++) {
+    uint64_t writeElementSize = elementSize;
+    uint64_t writeBlockIdx = currentBlockIndex;
+    uint64_t writeServerIdx = currentServerIndex;
+    uint64_t writeFamPtr = currentFamPtr;
+    do {
+      uint64_t availableSize =
+          (writeBlockIdx + 1) * interleaveSize - writeFamPtr;
+      struct iovec iov;
+      struct fi_rma_iov rma_iov;
+
+      if (writeElementSize > availableSize) {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = availableSize;
+
+        rma_iov.addr = writeFamPtr;
+        rma_iov.len = availableSize;
+        rma_iov.key = keys[writeServerIdx];
+
+        writeIOVectors[writeServerIdx].push_back({ iov, rma_iov });
+        writeElementSize -= availableSize;
+        writeServerIdx++;
+        if (writeServerIdx == usedMemsrvCnt) {
+          writeServerIdx = 0;
+          writeBlockIdx++;
+        }
+        writeFamPtr = writeBlockIdx * interleaveSize;
+        currentLocalPtr += availableSize;
+      } else {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = writeElementSize;
+
+        rma_iov.addr = writeFamPtr;
+        rma_iov.len = writeElementSize;
+        rma_iov.key = keys[writeServerIdx];
+
+        writeIOVectors[writeServerIdx].push_back({ iov, rma_iov });
+        currentLocalPtr += writeElementSize;
+        writeElementSize = 0;
+      }
+    } while (writeElementSize != 0);
+
+    /*
+     * Calculating the position of next element for the given stride size.
+     */
+    uint64_t strideSize = stride * elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      if (strideSize > availableSize) {
+        strideSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+      } else {
+        currentFamPtr += strideSize;
+        strideSize = 0;
+      }
+    } while (strideSize != 0);
+  }
+  /*
+   * Iterate over the array of vector for each memory server and perform write
+   * operation using libfabric
+   */
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!writeIOVectors[index].empty()) {
+      ret = fabric_write(writeIOVectors[index], (*fiAddr)[memServerIds[index]],
+                         get_context(descriptor, memServerIds[index]),
+                         fabric_iov_limit, (uint64_t)(base_addr_list[index]),
+                         true);
+    }
+  }
+  return ret;
+}
+
+int Fam_Ops_Libfabric::gather_blocking(void *local, Fam_Descriptor *descriptor,
+                                       uint64_t nElements,
+                                       uint64_t firstElement, uint64_t stride,
+                                       uint64_t elementSize) {
+
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx =
+      (((firstElement * elementSize) / interleaveSize) % usedMemsrvCnt);
+  uint64_t startBlockIdx =
+      (((firstElement * elementSize) / interleaveSize) - startServerIdx) /
+      usedMemsrvCnt;
+  uint64_t displacement = (firstElement * elementSize) % interleaveSize;
+  std::vector<std::pair<iovec, fi_rma_iov> > readIOVectors[usedMemsrvCnt];
+
+  int ret = 0;
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentServerIndex = startServerIdx;
+  uint64_t currentBlockIndex = startBlockIdx;
+  uint64_t currentFamPtr = startBlockIdx * interleaveSize + displacement;
+  uint64_t currentLocalPtr = (uint64_t)local;
+  for (int i = 0; i < (int)nElements; i++) {
+    uint64_t readElementSize = elementSize;
+    uint64_t readServerIdx = currentServerIndex;
+    uint64_t readBlockIdx = currentBlockIndex;
+    uint64_t readFamPtr = currentFamPtr;
+    do {
+      uint64_t availableSize = (readBlockIdx + 1) * interleaveSize - readFamPtr;
+      struct iovec iov;
+      struct fi_rma_iov rma_iov;
+
+      if (readElementSize > availableSize) {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = availableSize;
+
+        rma_iov.addr = readFamPtr;
+        rma_iov.len = availableSize;
+        rma_iov.key = keys[readServerIdx];
+
+        readIOVectors[readServerIdx].push_back({ iov, rma_iov });
+        readElementSize -= availableSize;
+        readServerIdx++;
+        if (readServerIdx == usedMemsrvCnt) {
+          readServerIdx = 0;
+          readBlockIdx++;
+        }
+        readFamPtr = readBlockIdx * interleaveSize;
+        currentLocalPtr += availableSize;
+      } else {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = readElementSize;
+
+        rma_iov.addr = readFamPtr;
+        rma_iov.len = readElementSize;
+        rma_iov.key = keys[readServerIdx];
+
+        readIOVectors[readServerIdx].push_back({ iov, rma_iov });
+        currentLocalPtr += readElementSize;
+        readElementSize = 0;
+      }
+    } while (readElementSize != 0);
+
+    uint64_t strideSize = stride * elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      if (strideSize > availableSize) {
+        strideSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+      } else {
+        currentFamPtr += strideSize;
+        strideSize = 0;
+      }
+    } while (strideSize != 0);
+  }
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!readIOVectors[index].empty()) {
+      ret = fabric_read(readIOVectors[index], (*fiAddr)[memServerIds[index]],
+                        get_context(descriptor, memServerIds[index]),
+                        fabric_iov_limit, (uint64_t)(base_addr_list[index]),
+                        true);
+    }
+  }
+  return ret;
+}
+
+int Fam_Ops_Libfabric::scatter_blocking(void *local, Fam_Descriptor *descriptor,
+                                        uint64_t nElements,
+                                        uint64_t *elementIndex,
+                                        uint64_t elementSize) {
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx =
+      (((elementIndex[0] * elementSize) / interleaveSize) % usedMemsrvCnt);
+  std::vector<std::pair<iovec, fi_rma_iov> > writeIOVectors[usedMemsrvCnt];
+
+  int ret = 0;
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentLocalPtr = (uint64_t)local;
+
+  for (int i = 0; i < (int)nElements; i++) {
+    uint64_t currentServerIndex = 0;
+    uint64_t currentBlockIndex = 0;
+    uint64_t currentFamPtr = 0;
+    uint64_t strideSize = elementIndex[i] * elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      if (strideSize > availableSize) {
+        strideSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+      } else {
+        currentFamPtr += strideSize;
+        strideSize = 0;
+      }
+    } while (strideSize != 0);
+
+    uint64_t writeElementSize = elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      struct iovec iov;
+      struct fi_rma_iov rma_iov;
+
+      if (writeElementSize > availableSize) {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = availableSize;
+
+        rma_iov.addr = currentFamPtr;
+        rma_iov.len = availableSize;
+        rma_iov.key = keys[currentServerIndex];
+
+        writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+        writeElementSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+        currentLocalPtr += availableSize;
+      } else {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = writeElementSize;
+
+        rma_iov.addr = currentFamPtr;
+        rma_iov.len = writeElementSize;
+        rma_iov.key = keys[currentServerIndex];
+
+        writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+        currentLocalPtr += writeElementSize;
+        writeElementSize = 0;
+      }
+    } while (writeElementSize != 0);
+  }
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!writeIOVectors[index].empty()) {
+      ret = fabric_write(writeIOVectors[index], (*fiAddr)[memServerIds[index]],
+                         get_context(descriptor, memServerIds[index]),
+                         fabric_iov_limit, (uint64_t)(base_addr_list[index]),
+                         true);
+    }
+  }
+  return ret;
+}
+
+int Fam_Ops_Libfabric::gather_blocking(void *local, Fam_Descriptor *descriptor,
+                                       uint64_t nElements,
+                                       uint64_t *elementIndex,
+                                       uint64_t elementSize) {
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx =
+      (((elementIndex[0] * elementSize) / interleaveSize) % usedMemsrvCnt);
+  std::vector<std::pair<iovec, fi_rma_iov> > readIOVectors[usedMemsrvCnt];
+
+  int ret = 0;
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentLocalPtr = (uint64_t)local;
+  for (int i = 0; i < (int)nElements; i++) {
+    uint64_t currentServerIndex = 0;
+    uint64_t currentBlockIndex = 0;
+    uint64_t currentFamPtr = 0;
+    uint64_t strideSize = elementIndex[i] * elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      if (strideSize > availableSize) {
+        strideSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+      } else {
+        currentFamPtr += strideSize;
+        strideSize = 0;
+      }
+    } while (strideSize != 0);
+
+    uint64_t readElementSize = elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      struct iovec iov;
+      struct fi_rma_iov rma_iov;
+
+      if (readElementSize > availableSize) {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = availableSize;
+
+        rma_iov.addr = currentFamPtr;
+        rma_iov.len = availableSize;
+        rma_iov.key = keys[currentServerIndex];
+
+        readIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+        readElementSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+        currentLocalPtr += availableSize;
+      } else {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = readElementSize;
+
+        rma_iov.addr = currentFamPtr;
+        rma_iov.len = readElementSize;
+        rma_iov.key = keys[currentServerIndex];
+
+        readIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+        currentLocalPtr += readElementSize;
+        readElementSize = 0;
+      }
+    } while (readElementSize != 0);
+  }
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!readIOVectors[index].empty()) {
+      ret = fabric_read(readIOVectors[index], (*fiAddr)[memServerIds[index]],
+                        get_context(descriptor, memServerIds[index]),
+                        fabric_iov_limit, (uint64_t)(base_addr_list[index]),
+                        true);
+    }
+  }
+  return ret;
+}
+
+void Fam_Ops_Libfabric::put_nonblocking(void *local, Fam_Descriptor *descriptor,
+                                        uint64_t offset, uint64_t nbytes) {
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx = ((offset / interleaveSize) % usedMemsrvCnt);
+  uint64_t startBlockIdx =
+      ((offset / interleaveSize) - startServerIdx) / usedMemsrvCnt;
+  uint64_t displacement = offset % interleaveSize;
+  std::vector<std::pair<iovec, fi_rma_iov> > writeIOVectors[usedMemsrvCnt];
+
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentServerIndex = startServerIdx;
+  uint64_t currentBlockIndex = startBlockIdx;
+  uint64_t currentFamPtr = startBlockIdx * interleaveSize + displacement;
+  uint64_t currentLocalPtr = (uint64_t)local;
+  uint64_t writeSize = nbytes;
+  do {
+    uint64_t availableSize =
+        (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+    struct iovec iov;
+    struct fi_rma_iov rma_iov;
+
+    if (writeSize > availableSize) {
+      iov.iov_base = (void *)currentLocalPtr;
+      iov.iov_len = availableSize;
+
+      rma_iov.addr =
+          (uint64_t)(base_addr_list[currentServerIndex]) + currentFamPtr;
+      rma_iov.len = availableSize;
+      rma_iov.key = keys[currentServerIndex];
+
+      writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      writeSize -= availableSize;
+      currentServerIndex++;
+      if (currentServerIndex == usedMemsrvCnt) {
+        currentServerIndex = 0;
+        currentBlockIndex++;
+      }
+      currentFamPtr = currentBlockIndex * interleaveSize;
+      currentLocalPtr += availableSize;
+    } else {
+      iov.iov_base = (void *)currentLocalPtr;
+      iov.iov_len = writeSize;
+
+      rma_iov.addr =
+          (uint64_t)(base_addr_list[currentServerIndex]) + currentFamPtr;
+      rma_iov.len = writeSize;
+      rma_iov.key = keys[currentServerIndex];
+
+      writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      currentLocalPtr += writeSize;
+      writeSize = 0;
+    }
+  } while (writeSize != 0);
+
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!writeIOVectors[index].empty()) {
+      fabric_write(writeIOVectors[index], (*fiAddr)[memServerIds[index]],
+                   get_context(descriptor, memServerIds[index]),
+                   fabric_iov_limit, (uint64_t)(base_addr_list[index]), false);
+    }
+  }
+}
+
+void Fam_Ops_Libfabric::get_nonblocking(void *local, Fam_Descriptor *descriptor,
+                                        uint64_t offset, uint64_t nbytes) {
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx = ((offset / interleaveSize) % usedMemsrvCnt);
+  uint64_t startBlockIdx =
+      ((offset / interleaveSize) - startServerIdx) / usedMemsrvCnt;
+  uint64_t displacement = offset % interleaveSize;
+  std::vector<std::pair<iovec, fi_rma_iov> > readIOVectors[usedMemsrvCnt];
+
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentServerIndex = startServerIdx;
+  uint64_t currentBlockIndex = startBlockIdx;
+  uint64_t currentFamPtr = startBlockIdx * interleaveSize + displacement;
+  uint64_t currentLocalPtr = (uint64_t)local;
+  uint64_t readSize = nbytes;
+  do {
+    uint64_t availableSize =
+        (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+    struct iovec iov;
+    struct fi_rma_iov rma_iov;
+
+    if (readSize > availableSize) {
+      iov.iov_base = (void *)currentLocalPtr;
+      iov.iov_len = availableSize;
+
+      rma_iov.addr =
+          (uint64_t)(base_addr_list[currentServerIndex]) + currentFamPtr;
+      rma_iov.len = availableSize;
+      rma_iov.key = keys[currentServerIndex];
+
+      readIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      readSize -= availableSize;
+      currentServerIndex++;
+      if (currentServerIndex == usedMemsrvCnt) {
+        currentServerIndex = 0;
+        currentBlockIndex++;
+      }
+      currentFamPtr = currentBlockIndex * interleaveSize;
+      currentLocalPtr += availableSize;
+    } else {
+      iov.iov_base = (void *)currentLocalPtr;
+      iov.iov_len = readSize;
+
+      rma_iov.addr =
+          (uint64_t)(base_addr_list[currentServerIndex]) + currentFamPtr;
+      rma_iov.len = readSize;
+      rma_iov.key = keys[currentServerIndex];
+
+      readIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      currentLocalPtr += readSize;
+      readSize = 0;
+    }
+  } while (readSize != 0);
+
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!readIOVectors[index].empty()) {
+      fabric_read(readIOVectors[index], (*fiAddr)[memServerIds[index]],
+                  get_context(descriptor, memServerIds[index]),
+                  fabric_iov_limit, (uint64_t)(base_addr_list[index]), false);
+    }
+  }
+}
+
+void Fam_Ops_Libfabric::scatter_nonblocking(
+    void *local, Fam_Descriptor *descriptor, uint64_t nElements,
+    uint64_t firstElement, uint64_t stride, uint64_t elementSize) {
+
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx =
+      (((firstElement * elementSize) / interleaveSize) % usedMemsrvCnt);
+  uint64_t startBlockIdx =
+      (((firstElement * elementSize) / interleaveSize) - startServerIdx) /
+      usedMemsrvCnt;
+  uint64_t displacement = (firstElement * elementSize) % interleaveSize;
+  std::vector<std::pair<iovec, fi_rma_iov> > writeIOVectors[usedMemsrvCnt];
+
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentServerIndex = startServerIdx;
+  uint64_t currentBlockIndex = startBlockIdx;
+  uint64_t currentFamPtr = startBlockIdx * interleaveSize + displacement;
+  uint64_t currentLocalPtr = (uint64_t)local;
+  for (int i = 0; i < (int)nElements; i++) {
+    uint64_t writeElementSize = elementSize;
+    uint64_t writeBlockIdx = currentBlockIndex;
+    uint64_t writeServerIdx = currentServerIndex;
+    uint64_t writeFamPtr = currentFamPtr;
+    do {
+      uint64_t availableSize =
+          (writeBlockIdx + 1) * interleaveSize - writeFamPtr;
+      struct iovec iov;
+      struct fi_rma_iov rma_iov;
+
+      if (writeElementSize > availableSize) {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = availableSize;
+
+        rma_iov.addr = writeFamPtr;
+        rma_iov.len = availableSize;
+        rma_iov.key = keys[writeServerIdx];
+
+        writeIOVectors[writeServerIdx].push_back({ iov, rma_iov });
+        writeElementSize -= availableSize;
+        writeServerIdx++;
+        if (writeServerIdx == usedMemsrvCnt) {
+          writeServerIdx = 0;
+          writeBlockIdx++;
+        }
+        writeFamPtr = writeBlockIdx * interleaveSize;
+        currentLocalPtr += availableSize;
+      } else {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = writeElementSize;
+
+        rma_iov.addr = writeFamPtr;
+        rma_iov.len = writeElementSize;
+        rma_iov.key = keys[writeServerIdx];
+
+        writeIOVectors[writeServerIdx].push_back({ iov, rma_iov });
+        currentLocalPtr += writeElementSize;
+        writeElementSize = 0;
+      }
+    } while (writeElementSize != 0);
+
+    uint64_t strideSize = stride * elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      if (strideSize > availableSize) {
+        strideSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+      } else {
+        currentFamPtr += strideSize;
+        strideSize = 0;
+      }
+    } while (strideSize != 0);
+  }
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!writeIOVectors[index].empty()) {
+      fabric_write(writeIOVectors[index], (*fiAddr)[memServerIds[index]],
+                   get_context(descriptor, memServerIds[index]),
+                   fabric_iov_limit, (uint64_t)(base_addr_list[index]), false);
+    }
+  }
+}
+
+void
+Fam_Ops_Libfabric::gather_nonblocking(void *local, Fam_Descriptor *descriptor,
+                                      uint64_t nElements, uint64_t firstElement,
+                                      uint64_t stride, uint64_t elementSize) {
+
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx =
+      (((firstElement * elementSize) / interleaveSize) % usedMemsrvCnt);
+  uint64_t startBlockIdx =
+      (((firstElement * elementSize) / interleaveSize) - startServerIdx) /
+      usedMemsrvCnt;
+  uint64_t displacement = (firstElement * elementSize) % interleaveSize;
+  std::vector<std::pair<iovec, fi_rma_iov> > readIOVectors[usedMemsrvCnt];
+
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentServerIndex = startServerIdx;
+  uint64_t currentBlockIndex = startBlockIdx;
+  uint64_t currentFamPtr = startBlockIdx * interleaveSize + displacement;
+  uint64_t currentLocalPtr = (uint64_t)local;
+  for (int i = 0; i < (int)nElements; i++) {
+    uint64_t readElementSize = elementSize;
+    uint64_t readServerIdx = currentServerIndex;
+    uint64_t readBlockIdx = currentBlockIndex;
+    uint64_t readFamPtr = currentFamPtr;
+    do {
+      uint64_t availableSize = (readBlockIdx + 1) * interleaveSize - readFamPtr;
+      struct iovec iov;
+      struct fi_rma_iov rma_iov;
+
+      if (readElementSize > availableSize) {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = availableSize;
+
+        rma_iov.addr = readFamPtr;
+        rma_iov.len = availableSize;
+        rma_iov.key = keys[readServerIdx];
+
+        readIOVectors[readServerIdx].push_back({ iov, rma_iov });
+        readElementSize -= availableSize;
+        readServerIdx++;
+        if (readServerIdx == usedMemsrvCnt) {
+          readServerIdx = 0;
+          readBlockIdx++;
+        }
+        readFamPtr = readBlockIdx * interleaveSize;
+        currentLocalPtr += availableSize;
+      } else {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = readElementSize;
+
+        rma_iov.addr = readFamPtr;
+        rma_iov.len = readElementSize;
+        rma_iov.key = keys[readServerIdx];
+
+        readIOVectors[readServerIdx].push_back({ iov, rma_iov });
+        currentLocalPtr += readElementSize;
+        readElementSize = 0;
+      }
+    } while (readElementSize != 0);
+
+    uint64_t strideSize = stride * elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      if (strideSize > availableSize) {
+        strideSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+      } else {
+        currentFamPtr += strideSize;
+        strideSize = 0;
+      }
+    } while (strideSize != 0);
+  }
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!readIOVectors[index].empty()) {
+      fabric_read(readIOVectors[index], (*fiAddr)[memServerIds[index]],
+                  get_context(descriptor, memServerIds[index]),
+                  fabric_iov_limit, (uint64_t)(base_addr_list[index]), false);
+    }
+  }
+}
+
+void Fam_Ops_Libfabric::scatter_nonblocking(void *local,
+                                            Fam_Descriptor *descriptor,
+                                            uint64_t nElements,
+                                            uint64_t *elementIndex,
+                                            uint64_t elementSize) {
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx =
+      (((elementIndex[0] * elementSize) / interleaveSize) % usedMemsrvCnt);
+  std::vector<std::pair<iovec, fi_rma_iov> > writeIOVectors[usedMemsrvCnt];
+
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentLocalPtr = (uint64_t)local;
+
+  for (int i = 0; i < (int)nElements; i++) {
+    uint64_t currentServerIndex = 0;
+    uint64_t currentBlockIndex = 0;
+    uint64_t currentFamPtr = 0;
+    uint64_t strideSize = elementIndex[i] * elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      if (strideSize > availableSize) {
+        strideSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+      } else {
+        currentFamPtr += strideSize;
+        strideSize = 0;
+      }
+    } while (strideSize != 0);
+
+    uint64_t writeElementSize = elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      struct iovec iov;
+      struct fi_rma_iov rma_iov;
+
+      if (writeElementSize > availableSize) {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = availableSize;
+
+        rma_iov.addr = currentFamPtr;
+        rma_iov.len = availableSize;
+        rma_iov.key = keys[currentServerIndex];
+
+        writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+        writeElementSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+        currentLocalPtr += availableSize;
+      } else {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = writeElementSize;
+
+        rma_iov.addr = currentFamPtr;
+        rma_iov.len = writeElementSize;
+        rma_iov.key = keys[currentServerIndex];
+
+        writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+        currentLocalPtr += writeElementSize;
+        writeElementSize = 0;
+      }
+    } while (writeElementSize != 0);
+  }
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!writeIOVectors[index].empty()) {
+      fabric_write(writeIOVectors[index], (*fiAddr)[memServerIds[index]],
+                   get_context(descriptor, memServerIds[index]),
+                   fabric_iov_limit, (uint64_t)(base_addr_list[index]), false);
+    }
+  }
+}
+
+void Fam_Ops_Libfabric::gather_nonblocking(void *local,
+                                           Fam_Descriptor *descriptor,
+                                           uint64_t nElements,
+                                           uint64_t *elementIndex,
+                                           uint64_t elementSize) {
+  uint64_t *memServerIds = descriptor->get_memserver_ids();
+  size_t interleaveSize = descriptor->get_interleave_size();
+  uint64_t *keys = descriptor->get_keys();
+  void **base_addr_list = descriptor->get_base_address_list();
+  uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+  uint64_t startServerIdx =
+      (((elementIndex[0] * elementSize) / interleaveSize) % usedMemsrvCnt);
+  std::vector<std::pair<iovec, fi_rma_iov> > readIOVectors[usedMemsrvCnt];
+
+  std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+  uint64_t currentLocalPtr = (uint64_t)local;
+  for (int i = 0; i < (int)nElements; i++) {
+    uint64_t currentServerIndex = 0;
+    uint64_t currentBlockIndex = 0;
+    uint64_t currentFamPtr = 0;
+    uint64_t strideSize = elementIndex[i] * elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      if (strideSize > availableSize) {
+        strideSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+      } else {
+        currentFamPtr += strideSize;
+        strideSize = 0;
+      }
+    } while (strideSize != 0);
+
+    uint64_t readElementSize = elementSize;
+    do {
+      uint64_t availableSize =
+          (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
+      struct iovec iov;
+      struct fi_rma_iov rma_iov;
+
+      if (readElementSize > availableSize) {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = availableSize;
+
+        rma_iov.addr = currentFamPtr;
+        rma_iov.len = availableSize;
+        rma_iov.key = keys[currentServerIndex];
+
+        readIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+        readElementSize -= availableSize;
+        currentServerIndex++;
+        if (currentServerIndex == usedMemsrvCnt) {
+          currentServerIndex = 0;
+          currentBlockIndex++;
+        }
+        currentFamPtr = currentBlockIndex * interleaveSize;
+        currentLocalPtr += availableSize;
+      } else {
+        iov.iov_base = (void *)currentLocalPtr;
+        iov.iov_len = readElementSize;
+
+        rma_iov.addr = currentFamPtr;
+        rma_iov.len = readElementSize;
+        rma_iov.key = keys[currentServerIndex];
+
+        readIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+        currentLocalPtr += readElementSize;
+        readElementSize = 0;
+      }
+    } while (readElementSize != 0);
+  }
+  for (int i = 0; i < (int)usedMemsrvCnt; i++) {
+    int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+    if (!readIOVectors[index].empty()) {
+      fabric_read(readIOVectors[index], (*fiAddr)[memServerIds[index]],
+                  get_context(descriptor, memServerIds[index]),
+                  fabric_iov_limit, (uint64_t)(base_addr_list[index]), false);
+    }
+  }
+}
+
+void Fam_Ops_Libfabric::quiet_context(Fam_Context *context = NULL) {
+  if (famContextModel == FAM_CONTEXT_DEFAULT) {
+    std::list<std::shared_future<void> > resultList;
+    int err = 0;
+    std::string errmsg;
+    int exception_caught = 0;
+
+    for (auto context : *defContexts) {
+      std::future<void> result =
+          (std::async(std::launch::async, fabric_quiet, context.second));
+      resultList.push_back(result.share());
+    }
+    for (auto result : resultList) {
+
+      try {
+        result.get();
+      }
+      catch (Fam_Exception &e) {
+        err = e.fam_error();
+        errmsg = e.fam_error_msg();
+        exception_caught = 1;
+      }
+    }
+
+    if (exception_caught == 1) {
+      THROW_ERRNO_MSG(Fam_Datapath_Exception, get_fam_error(err), errmsg);
+    }
+
+  } else if (famContextModel == FAM_CONTEXT_REGION) {
+    fabric_quiet(context);
+  }
+  return;
+}
+
+void Fam_Ops_Libfabric::quiet(Fam_Region_Descriptor *descriptor) {
+  if (famContextModel == FAM_CONTEXT_DEFAULT) {
+    quiet_context();
+    return;
+  } else if (famContextModel == FAM_CONTEXT_REGION) {
+    // ctx mutex lock
+    (void)pthread_mutex_lock(&ctxLock);
+    try {
+      if (descriptor) {
+        Fam_Context *ctx = (Fam_Context *)descriptor->get_context();
+        if (ctx) {
+          quiet_context(ctx);
+        } else {
+          Fam_Global_Descriptor global = descriptor->get_global_descriptor();
+          uint64_t regionId = global.regionId;
+          auto ctxObj = contexts->find(regionId);
+          if (ctxObj != contexts->end()) {
+            descriptor->set_context(ctxObj->second);
+            quiet_context(ctxObj->second);
+          }
+        }
+      } else {
+        for (auto fam_ctx : *contexts)
+          quiet_context(fam_ctx.second);
+      }
+    }
+    catch (...) {
+      // ctx mutex unlock
+      (void)pthread_mutex_unlock(&ctxLock);
+      throw;
+    }
+    // ctx mutex unlock
+    (void)pthread_mutex_unlock(&ctxLock);
+  }
+}
+
+int64_t Fam_Ops_Libfabric::atomic_fetch_add(Fam_Descriptor *descriptor,
+                                            uint64_t offset, int64_t value) {
+    std::ostringstream message;
+    uint64_t *memServerIds = descriptor->get_memserver_ids();
+    size_t interleaveSize = descriptor->get_interleave_size();
+    uint64_t *keys = descriptor->get_keys();
+    void **base_addr_list = descriptor->get_base_address_list();
+    uint64_t usedMemsrvCnt = descriptor->get_used_memsrv_cnt();
+    uint64_t startServerIdx = ((offset / interleaveSize) % usedMemsrvCnt);
+
+    uint64_t displacement = offset % interleaveSize;
+
+    if (interleaveSize - displacement < sizeof(int64_t)) {
+      message << "Atmoic operation can not be performed, size of the value "
+                 "goes beyond interleave block";
+      THROW_ERR_MSG(Fam_Datapath_Exception, message.str().c_str());
+    }
+    uint64_t key = keys[startServerIdx];
+    offset += (uint64_t)base_addr_list[startServerIdx];
+
+    std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
+    int64_t result;
+    fabric_fetch_atomic(key, (void *)&value, (void *)&result, offset, FI_SUM,
+                        FI_INT64, (*fiAddr)[memServerIds[startServerIdx]],
+                        get_context(descriptor, memServerIds[startServerIdx]));
+    return result;
+}
+
+void *Fam_Ops_Libfabric::backup(Fam_Descriptor *descriptor, char *BackupName) {
+
+    return famAllocator->backup(descriptor, BackupName);
+}
+
+void *Fam_Ops_Libfabric::restore(char *BackupName, Fam_Descriptor *dest,
+                                 uint64_t size) {
+
+    return famAllocator->restore(dest, BackupName, size);
+}
+
+void Fam_Ops_Libfabric::wait_for_backup(void *waitObj) {
+    return famAllocator->wait_for_backup(waitObj);
+}
+void Fam_Ops_Libfabric::wait_for_restore(void *waitObj) {
+    return famAllocator->wait_for_restore(waitObj);
+}
+
+uint64_t Fam_Ops_Libfabric::progress() { return progress_context(); }
+
+uint64_t Fam_Ops_Libfabric::progress_context() {
+    uint64_t pending = 0;
+    for (auto fam_ctx : *defContexts) {
+        pending += fabric_progress(fam_ctx.second);
+    }
+    return pending;
+}
+
+
+#if 0
 int Fam_Ops_Libfabric::gather_blocking(void *local, Fam_Descriptor *descriptor,
                                        uint64_t nElements,
                                        uint64_t firstElement, uint64_t stride,
@@ -586,24 +1727,6 @@ void Fam_Ops_Libfabric::wait_for_copy(void *waitObj) {
     return famAllocator->wait_for_copy(waitObj);
 }
 
-void *Fam_Ops_Libfabric::backup(Fam_Descriptor *descriptor, char *BackupName) {
-
-    return famAllocator->backup(descriptor, BackupName);
-}
-
-void *Fam_Ops_Libfabric::restore(char *BackupName, Fam_Descriptor *dest,
-                                 uint64_t size) {
-
-    return famAllocator->restore(dest, BackupName, size);
-}
-
-void Fam_Ops_Libfabric::wait_for_backup(void *waitObj) {
-    return famAllocator->wait_for_backup(waitObj);
-}
-void Fam_Ops_Libfabric::wait_for_restore(void *waitObj) {
-    return famAllocator->wait_for_restore(waitObj);
-}
-
 void Fam_Ops_Libfabric::fence(Fam_Region_Descriptor *descriptor) {
     std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
 
@@ -662,6 +1785,7 @@ void Fam_Ops_Libfabric::check_progress(Fam_Region_Descriptor *descriptor) {
     return;
 }
 
+<<<<<<< Updated upstream
 void Fam_Ops_Libfabric::quiet_context(Fam_Context *context = NULL) {
     if (famContextModel == FAM_CONTEXT_DEFAULT) {
         std::list<std::shared_future<void>> resultList;
@@ -731,15 +1855,7 @@ void Fam_Ops_Libfabric::quiet(Fam_Region_Descriptor *descriptor) {
     }
 }
 
-uint64_t Fam_Ops_Libfabric::progress_context() {
-    uint64_t pending = 0;
-    for (auto fam_ctx : *defContexts) {
-        pending += fabric_progress(fam_ctx.second);
-    }
-    return pending;
-}
 
-uint64_t Fam_Ops_Libfabric::progress() { return progress_context(); }
 void Fam_Ops_Libfabric::atomic_set(Fam_Descriptor *descriptor, uint64_t offset,
                                    int32_t value) {
     std::ostringstream message;
@@ -1852,5 +2968,5 @@ int128_t Fam_Ops_Libfabric::atomic_fetch_int128(Fam_Descriptor *descriptor,
     famAllocator->release_CAS_lock(descriptor);
     return local;
 }
-
+#endif
 } // namespace openfam

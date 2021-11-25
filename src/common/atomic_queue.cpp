@@ -235,7 +235,7 @@ int atomicQueue::read(Fam_Global_Descriptor *item) {
         return ATOMIC_QUEUE_EMPTY; // array empty
     item->regionId = ATOMIC_REGION_ID;
     // front should hold the offset of the data to be read
-    item->offset = *((uint64_t *)pointerA + lcqData->front);
+    // item->offset = *((uint64_t *)pointerA + lcqData->front);
     return 0;
 }
 
@@ -545,10 +545,15 @@ void *process_queue(void *arg) {
                     msgPointer->dstDataGdesc.offset + msgPointer->offset);
                 try {
                     // Write data to client's memory
+#if 0
                     ret = fabric_write(
                         msgPointer->key, localPointerD, msgPointer->size,
                         msgPointer->srcBaseAddr, fiAddr,
                         famOpsLibfabricQ->get_defaultCtx(uint64_t(0)));
+#endif
+                  // ret = fabric_write(
+                  //    msgPointer->key, localPointerD, msgPointer->size, 0,
+                  //    fiAddr, famOpsLibfabricQ->get_defaultCtx(uint64_t(0)));
                 } catch (...) {
                     retStatus = FABRICWRITEERROR;
                 }
@@ -1011,10 +1016,15 @@ void *process_queue(void *arg) {
                 }
                 // Copy data to client's memory
                 try {
-                    retStatus = fabric_write(
+#if 0
+					retStatus = fabric_write(
                         msgPointer->key, bufferPtr, bufferSize,
                         msgPointer->srcBaseAddr, fiAddr,
                         famOpsLibfabricQ->get_defaultCtx(uint64_t(0)));
+#endif
+                  // retStatus = fabric_write(
+                  //    msgPointer->key, bufferPtr, bufferSize, 0, fiAddr,
+                  //    famOpsLibfabricQ->get_defaultCtx(uint64_t(0)));
                 } catch (...) {
                     retStatus = FABRICWRITEERROR;
                 }
@@ -1059,10 +1069,15 @@ void *process_queue(void *arg) {
                 }
                 // Copy data back to client's memory
                 try {
-                    retStatus = fabric_write(
+#if 0
+					retStatus = fabric_write(
                         msgPointer->key, bufferPtr, bufferSize,
                         msgPointer->srcBaseAddr, fiAddr,
                         famOpsLibfabricQ->get_defaultCtx(uint64_t(0)));
+#endif
+                  // retStatus = fabric_write(
+                  //    msgPointer->key, bufferPtr, bufferSize, 0, fiAddr,
+                  //    famOpsLibfabricQ->get_defaultCtx(uint64_t(0)));
                 } catch (...) {
                     retStatus = FABRICWRITEERROR;
                 }

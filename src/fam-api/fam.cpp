@@ -702,8 +702,9 @@ void fam::Impl_::fam_initialize(const char *grpName, Fam_Options *options) {
     if (strcmp(famOptions.openFamModel, FAM_OPTIONS_SHM_STR) == 0) {
         // initialize shared memory client
         famAllocator = new Fam_Allocator_Client(true);
-        famOps = new Fam_Ops_SHM(famThreadModel, famContextModel, famAllocator,
-                                 atoi(famOptions.numConsumer));
+        // famOps = new Fam_Ops_SHM(famThreadModel, famContextModel,
+        // famAllocator,
+        //                         atoi(famOptions.numConsumer));
         ret = famOps->initialize();
     } else {
         if (strcmp(famOptions.cisInterfaceType, FAM_OPTIONS_RPC_STR) == 0) {
@@ -911,16 +912,18 @@ void fam::Impl_::clean_fam_options() {
  * */
 int fam::Impl_::validate_item(Fam_Descriptor *descriptor) {
     std::ostringstream message;
-    uint64_t key = descriptor->get_key();
+    uint64_t *keys = descriptor->get_keys();
 
-    if (key == FAM_KEY_UNINITIALIZED) {
+    if (keys == NULL) {
         famAllocator->check_permission_get_info(descriptor);
     }
 
-    if (key == FAM_KEY_INVALID) {
+#if 0
+    if (keys == FAM_KEY_INVALID) {
         message << "Invalid Key Passed" << endl;
         THROW_ERR_MSG(Fam_InvalidOption_Exception, message.str().c_str());
     }
+#endif
     return 0;
 }
 
@@ -1340,26 +1343,31 @@ void fam::Impl_::fam_stat(Fam_Region_Descriptor *descriptor,
  * @see #fam_unmap()
  */
 void *fam::Impl_::fam_map(Fam_Descriptor *descriptor) {
+  if (strcmp(famOptions.openFamModel, FAM_OPTIONS_SHM_STR) == 0) {
+    FAM_UNIMPLEMENTED_MEMSRVMODEL()
+    return NULL;
+  } else {
     void *result = NULL;
     FAM_CNTR_INC_API(fam_map);
     FAM_PROFILE_START_ALLOCATOR(fam_map);
     if (descriptor == NULL) {
-        THROW_ERR_MSG(Fam_InvalidOption_Exception, "Invalid Options");
+      THROW_ERR_MSG(Fam_InvalidOption_Exception, "Invalid Options");
     }
     int ret = validate_item(descriptor);
     FAM_PROFILE_END_ALLOCATOR(fam_map);
 
     FAM_PROFILE_START_OPS(fam_map);
     if (ret == 0) {
-        void *address;
-        address = famAllocator->fam_map(descriptor);
-        if (address != NULL) {
-            descriptor->set_base_address(address);
-        }
-        result = address;
+      void *address;
+      address = famAllocator->fam_map(descriptor);
+      if (address != NULL) {
+        // descriptor->set_base_address(address);
+      }
+      result = address;
     }
     FAM_PROFILE_END_OPS(fam_map);
     return result;
+  }
 }
 
 /**
@@ -1370,20 +1378,25 @@ void *fam::Impl_::fam_map(Fam_Descriptor *descriptor) {
  * @see #fam_map()
  */
 void fam::Impl_::fam_unmap(void *local, Fam_Descriptor *descriptor) {
+  if (strcmp(famOptions.openFamModel, FAM_OPTIONS_SHM_STR) == 0) {
+    FAM_UNIMPLEMENTED_MEMSRVMODEL()
+    return;
+  } else {
     FAM_CNTR_INC_API(fam_unmap);
     FAM_PROFILE_START_ALLOCATOR(fam_unmap);
     if (descriptor == NULL || local == NULL) {
-        THROW_ERR_MSG(Fam_InvalidOption_Exception, "Invalid Options");
+      THROW_ERR_MSG(Fam_InvalidOption_Exception, "Invalid Options");
     }
 
     int ret = validate_item(descriptor);
     FAM_PROFILE_END_ALLOCATOR(fam_unmap);
     FAM_PROFILE_START_OPS(fam_unmap);
     if (ret == 0) {
-        famAllocator->fam_unmap(local, descriptor);
+      famAllocator->fam_unmap(local, descriptor);
     }
     FAM_PROFILE_END_OPS(fam_unmap);
     return;
+  }
 }
 
 // DATA READ AND WRITE Group. These APIs read and write data in FAM and copy
@@ -1868,7 +1881,8 @@ void *fam::Impl_::fam_backup(Fam_Descriptor *src, char *BackupName) {
     FAM_CNTR_INC_API(fam_backup);
     FAM_PROFILE_START_ALLOCATOR(fam_backup);
     Fam_Backup_Info info;
-    info = famAllocator->get_backup_info(BackupName, src->get_memserver_id());
+	uint64_t *memserverIds = src->get_memserver_ids();
+    info = famAllocator->get_backup_info(BackupName, memserverIds[0]);
     if (info.size >= (int)0) {
         THROW_ERR_MSG(Fam_InvalidOption_Exception, "Backup already exist.");
     }
@@ -1890,7 +1904,8 @@ void *fam::Impl_::fam_restore(char *BackupName, Fam_Descriptor *dest) {
     FAM_PROFILE_START_ALLOCATOR(fam_restore);
     Fam_Backup_Info info;
 
-    info = famAllocator->get_backup_info(BackupName, dest->get_memserver_id());
+	uint64_t *memserverIds = dest->get_memserver_ids();
+    info = famAllocator->get_backup_info(BackupName, memserverIds[0]);
     if (info.size == (int)-1) {
         THROW_ERR_MSG(Fam_InvalidOption_Exception, "Backup doesnot exist.");
     }

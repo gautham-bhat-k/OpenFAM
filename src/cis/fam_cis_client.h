@@ -45,14 +45,6 @@
 #include "cis/fam_cis_rpc.grpc.pb.h"
 using namespace std;
 
-#define FAM_UNIMPLEMENTED_GRPC()                                               \
-    {                                                                          \
-        std::ostringstream message;                                            \
-        message << __func__                                                    \
-                << " is Not Yet Implemented for libfabric interface !!!";      \
-        throw Fam_Unimplemented_Exception(message.str().c_str());              \
-    }
-
 namespace openfam {
 
 using service = std::unique_ptr<Fam_CIS_Rpc::Stub>;

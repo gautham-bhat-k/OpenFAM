@@ -84,65 +84,16 @@ int fabric_register_mr(void *addr, size_t size, uint64_t *key,
 
 int fabric_deregister_mr(fid_mr *&mr);
 
-int fabric_write(uint64_t key, const void *local, size_t nbytes,
-                 uint64_t offset, fi_addr_t fiAddr, Fam_Context *famCtx);
-
 int fabric_read(uint64_t key, const void *local, size_t nbytes, uint64_t offset,
                 fi_addr_t fiAddr, Fam_Context *famCtx);
 
-int fabric_scatter_stride_blocking(uint64_t key, const void *local,
-                                   size_t nbytes, uint64_t first,
-                                   uint64_t count, uint64_t stride,
-                                   fi_addr_t fiAddr, Fam_Context *famCtx,
-                                   size_t iov_limit, uint64_t base);
+int fabric_write(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
+                 fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
+                 uint64_t base, bool block);
 
-int fabric_gather_stride_blocking(uint64_t key, const void *local,
-                                  size_t nbytes, uint64_t first, uint64_t count,
-                                  uint64_t stride, fi_addr_t fiAddr,
-                                  Fam_Context *famCtx, size_t iov_limit,
-                                  uint64_t base);
-
-int fabric_scatter_index_blocking(uint64_t key, const void *local,
-                                  size_t nbytes, uint64_t *index,
-                                  uint64_t count, fi_addr_t fiAddr,
-                                  Fam_Context *famCtx, size_t iov_limit,
-                                  uint64_t base);
-
-int fabric_gather_index_blocking(uint64_t key, const void *local, size_t nbytes,
-                                 uint64_t *index, uint64_t count,
-                                 fi_addr_t fiAddr, Fam_Context *famCtx,
-                                 size_t iov_limit, uint64_t base);
-void fabric_write_nonblocking(uint64_t key, const void *local, size_t nbytes,
-                              uint64_t offset, fi_addr_t fiAddr,
-                              Fam_Context *famCtx);
-
-void fabric_read_nonblocking(uint64_t key, const void *local, size_t nbytes,
-                             uint64_t offset, fi_addr_t fiAddr,
-                             Fam_Context *famCtx);
-
-void fabric_scatter_stride_nonblocking(uint64_t key, const void *local,
-                                       size_t nbytes, uint64_t first,
-                                       uint64_t count, uint64_t stride,
-                                       fi_addr_t fiAddr, Fam_Context *famCtx,
-                                       size_t iov_limit, uint64_t base);
-
-void fabric_gather_stride_nonblocking(uint64_t key, const void *local,
-                                      size_t nbytes, uint64_t first,
-                                      uint64_t count, uint64_t stride,
-                                      fi_addr_t fiAddr, Fam_Context *famCtx,
-                                      size_t iov_limit, uint64_t base);
-
-void fabric_scatter_index_nonblocking(uint64_t key, const void *local,
-                                      size_t nbytes, uint64_t *index,
-                                      uint64_t count, fi_addr_t fiAddr,
-                                      Fam_Context *famCtx, size_t iov_limit,
-                                      uint64_t base);
-
-void fabric_gather_index_nonblocking(uint64_t key, const void *local,
-                                     size_t nbytes, uint64_t *index,
-                                     uint64_t count, fi_addr_t fiAddr,
-                                     Fam_Context *famCtx, size_t iov_limit,
-                                     uint64_t base);
+int fabric_read(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
+                fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
+                uint64_t base, bool block);
 
 void fabric_fence(fi_addr_t fiAddr, Fam_Context *context);
 

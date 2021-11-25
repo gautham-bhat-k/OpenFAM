@@ -73,7 +73,7 @@ add_fam_test(fam_control_path_reg_test)
 
 add_fam_test(fam_put_get_negative_test)
 add_fam_test(fam_fence_reg_test)
-add_fam_test(fam_invalidkey_reg_test)
+#add_fam_test(fam_invalidkey_reg_test)
 add_fam_test(fam_barrier_reg_test)
 add_fam_test(fam_backup_restore_reg_test)
 #add_fam_test(fam_put_get)
