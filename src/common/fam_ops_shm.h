@@ -62,6 +62,10 @@ class Fam_Ops_SHM : public Fam_Ops {
 
     void finalize();
 
+    void reset_profile() {}
+
+    void dump_profile() {}
+
     void abort(int status);
 
     Fam_Context *get_context(Fam_Descriptor *descriptor);

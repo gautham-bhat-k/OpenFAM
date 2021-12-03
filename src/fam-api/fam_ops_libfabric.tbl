@@ -1,0 +1,4 @@
+MEMSERVER_COUNTER(init_calculations)
+MEMSERVER_COUNTER(io_vector_accumulation)
+MEMSERVER_COUNTER(fabric_call_to_memserver)
+

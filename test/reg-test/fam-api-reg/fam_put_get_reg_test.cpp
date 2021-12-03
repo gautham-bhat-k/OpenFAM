@@ -40,38 +40,81 @@
 using namespace std;
 using namespace openfam;
 
-fam *my_fam;
-Fam_Options fam_opts;
+fam *my_fam, *my_fam_sec;
+Fam_Options fam_opts, fam_opts_sec;
 
 // Test case 1 - put get test.
 TEST(FamPutGet, PutGetSuccess) {
     Fam_Region_Descriptor *desc;
     Fam_Descriptor *item;
-    char *local = strdup("Test message");
+    //char *local = strdup("Test message");
+        char *local = (char *)malloc(98304);
+        memset(local, 'a', 16384);
+        memset((void *)((uint64_t)local+16384), 'b', 16384);
+        memset((void *)((uint64_t)local+2*16384), 'c', 16384);
+        memset((void *)((uint64_t)local+3*16384), 'd', 16384);
+        memset((void *)((uint64_t)local+4*16384), 'e', 16384);
+        memset((void *)((uint64_t)local+5*16384), 'f', 16384);
+
     const char *testRegion = get_uniq_str("test", my_fam);
     const char *firstItem = get_uniq_str("first", my_fam);
 
-    EXPECT_NO_THROW(
-        desc = my_fam->fam_create_region(testRegion, 8192, 0777, RAID1));
+    //EXPECT_NO_THROW(
+    //    desc = my_fam->fam_create_region(testRegion, 104857600, 0777, RAID1));
+        try {
+                desc = my_fam->fam_create_region(testRegion, 104857600, 0777, RAID1);
+        } catch(Fam_Exception &e) {
+                cout << "Create Region : " << e.fam_error_msg() << endl;
+                exit(1);
+        }
     EXPECT_NE((void *)NULL, desc);
 
     // Allocating data items in the created region
-    EXPECT_NO_THROW(item = my_fam->fam_allocate(firstItem, 1024, 0777, desc));
+    EXPECT_NO_THROW(item = my_fam->fam_allocate(firstItem, 10485760, 0777, desc));
     EXPECT_NE((void *)NULL, item);
 
-    EXPECT_NO_THROW(my_fam->fam_put_blocking(local, item, 0, 13));
-
+        //EXPECT_NO_THROW(item2 = my_fam->fam_lookup(firstItem, testRegion));
+#if 0
+        try {
+                item2 = my_fam->fam_lookup(firstItem, testRegion);
+        } catch(Fam_Exception &e) {
+        cout << "Lookup : " << e.fam_error_msg() << endl;
+        exit(1);
+    }
+        EXPECT_NE((void *)NULL, item2);
+#endif
+        cout << "Fam put blocking from test case" << endl;
+    //EXPECT_NO_THROW(my_fam->fam_put_blocking(local, item, 0, 1048576));
+        try {
+                my_fam->fam_put_blocking(local, item, 8, 98304);
+        } catch(Fam_Exception &e) {
+                cout << "Put : " << e.fam_error_msg() << endl;
+                exit(1);
+        }
+        //my_fam->fam_quiet();
+#if 1
     // allocate local memory to receive 20 elements
-    char *local2 = (char *)malloc(20);
+    char *local2 = (char *)malloc(98304);
 
-    EXPECT_NO_THROW(my_fam->fam_get_blocking(local2, item, 0, 13));
-
-    EXPECT_STREQ(local, local2);
-
-    EXPECT_NO_THROW(my_fam->fam_deallocate(item));
+        try {
+        my_fam->fam_get_blocking(local2, item, 8, 98304);
+        } catch(Fam_Exception &e) {
+        cout << "Get : " << e.fam_error_msg() << endl;
+        exit(1);
+    }
+       // my_fam->fam_quiet();
+        EXPECT_STREQ(local, local2);
+    //EXPECT_NO_THROW(my_fam->fam_deallocate(item));
+        try {
+                my_fam->fam_deallocate(item);
+        } catch(Fam_Exception &e) {
+        cout << "Deallocation : " << e.fam_error_msg() << endl;
+        exit(1);
+    }
+#endif
     EXPECT_NO_THROW(my_fam->fam_destroy_region(desc));
-
     delete item;
+ //       delete item2;
     delete desc;
 
     free((void *)testRegion);
@@ -79,18 +122,24 @@ TEST(FamPutGet, PutGetSuccess) {
 }
 
 int main(int argc, char **argv) {
-    int ret;
+    int ret = 0;
     ::testing::InitGoogleTest(&argc, argv);
 
     my_fam = new fam();
-
+        //my_fam_sec = new fam();
     init_fam_options(&fam_opts);
 
     EXPECT_NO_THROW(my_fam->fam_initialize("default", &fam_opts));
 
+        //init_fam_options(&fam_opts_sec);
+        //fam_opts_sec.runtime = strdup("NONE");
+        //EXPECT_NO_THROW(my_fam_sec->fam_initialize("second", &fam_opts_sec));
     ret = RUN_ALL_TESTS();
 
+        //cout << "All tests completed" << endl;
     EXPECT_NO_THROW(my_fam->fam_finalize("default"));
-
+    //EXPECT_NO_THROW(my_fam_sec->fam_finalize("second"));
+        //cout << "Finalize completed" << endl;
     return ret;
 }
+

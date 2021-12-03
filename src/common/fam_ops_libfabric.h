@@ -86,6 +86,8 @@ class Fam_Ops_Libfabric : public Fam_Ops {
                       Fam_Thread_Model famTM, Fam_Allocator_Client *famAlloc,
                       Fam_Context_Model famCM, const char *memServerName,
                       const char *libfabricPort);
+    void reset_profile();
+    void dump_profile();
     /**
      * Initialize the libfabric library. This method is required to be the first
      * method called when a process uses the OpenFAM library.
@@ -157,7 +159,7 @@ class Fam_Ops_Libfabric : public Fam_Ops {
     void fence(Fam_Region_Descriptor *descriptor = NULL) {}
 
     uint64_t progress();
-    void check_progress(Fam_Region_Descriptor *descriptor = NULL) {}
+    void check_progress(Fam_Region_Descriptor *descriptor = NULL);
 
     void atomic_set(Fam_Descriptor *descriptor, uint64_t offset,
                     int32_t value) {}
@@ -306,10 +308,10 @@ class Fam_Ops_Libfabric : public Fam_Ops {
     }
     int64_t atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
                              int64_t value);
+
     uint32_t atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
-                              uint32_t value) {
-      return 0;
-    }
+                              uint32_t value) { return 0; }
+
     uint64_t atomic_fetch_add(Fam_Descriptor *descriptor, uint64_t offset,
                               uint64_t value) {
       return 0;

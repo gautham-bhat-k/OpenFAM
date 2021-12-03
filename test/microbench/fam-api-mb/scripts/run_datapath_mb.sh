@@ -28,12 +28,13 @@
  # See https://spdx.org/licenses/BSD-3-Clause
  #
  #
+
 base_dir=$4
 
 cmd="${base_dir}/build/test/microbench/fam-api-mb/fam_microbenchmark_datapath $2 $3"
 if [[ $5 == "memory_server" ]]
 then
-	log_dir="${base_dir}/mb_logs/memory_server/data_path"
+	log_dir="${base_dir}/mb_logs/memory_server/data_path_1Minterleave_1GBdata"
 	mkdir -p $log_dir
 else
 	log_dir="${base_dir}/mb_logs/shared_memory/data_path"
@@ -44,10 +45,24 @@ arg_file=$6
 
 num_memserv=$(($(cat ${arg_file} | grep "memserverlist" | cut -d'=' -f2 | grep -o "," | wc -l) + 1))
 
-launcher="${base_dir}/third-party/build/bin/mpirun -n $1"
+#launcher="${base_dir}/third-party/build/bin/mpirun -n $1"
 #uncomment the following line incase of slurm is used as launcher
 #and change the options accordingly
-#launcher="srun -N $1 -n $1 --nodelist=127.0.0.1 --mpi=pmix_v2"
+case $1 in
+	1) nodelist=escnode11
+	;;
+	2) nodelist=escnode[11-12]
+	;;
+	4) nodelist=escnode[11-12,14-15]
+	;;
+	8) nodelist=escnode[11-12,14-19]
+	;;
+        16) nodelist=escnode[11-12,14-29]
+	;;
+esac
+echo "$nodelist"
+launcher="srun -N $1 -n $1 --nodelist=$nodelist --mpi=pmix_v2"
+echo "$launcher"
 
 $launcher $cmd --gtest_filter=FamPutGet.BlockingFamPut >$log_dir/${1}PE_${2}_CLIENT_PB_${num_memserv}.log
 wait
@@ -65,6 +80,7 @@ $launcher $cmd --gtest_filter=FamScatter.NonBlockingScatterIndex >$log_dir/${1}P
 wait
 $launcher $cmd --gtest_filter=FamScatter.NonBlockingGatherIndex >$log_dir/${1}PE_${2}_CLIENT_GINB_${num_memserv}.log
 wait
+'''
 $launcher $cmd --gtest_filter=FamScatter.BlockingScatterIndexSize >$log_dir/${1}PE_${2}_CLIENT_SISB_${num_memserv}.log
 wait
 $launcher $cmd --gtest_filter=FamScatter.BlockingGatherIndexSize >$log_dir/${1}PE_${2}_CLIENT_GISB_${num_memserv}.log
@@ -73,6 +89,6 @@ $launcher $cmd --gtest_filter=FamScatter.NonBlockingScatterIndexSize >$log_dir/$
 wait
 $launcher $cmd --gtest_filter=FamScatter.NonBlockingGatherIndexSize >$log_dir/${1}PE_${2}_CLIENT_GISNB_${num_memserv}.log
 wait
-
+'''
 
 

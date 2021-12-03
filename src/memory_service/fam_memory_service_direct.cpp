@@ -45,7 +45,7 @@ using namespace std;
 using namespace chrono;
 namespace openfam {
 MEMSERVER_PROFILE_START(MEMORY_SERVICE_DIRECT)
-#ifdef MEMSERVER_PROFILE
+#ifndef MEMSERVER_PROFILE
 #define MEMORY_SERVICE_DIRECT_PROFILE_START_OPS()                              \
     {                                                                          \
         Profile_Time start = MEMORY_SERVICE_DIRECT_get_time();

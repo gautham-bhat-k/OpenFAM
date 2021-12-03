@@ -432,7 +432,7 @@ if (
             cmd = (
                 srun_cmd
                 + memory_server_addr
-                + " --mpi=" + mpitype
+                + " --mpi=" + mpitype + " "
                 + args.buildpath
                 + "/src/memory_server -a "
                 + memory_server_addr
@@ -491,7 +491,7 @@ if (
             cmd = (
                 srun_cmd
                 + metadata_server_addr
-                + " --mpi=" + mpitype
+                + " --mpi=" + mpitype + " "
                 + args.buildpath
                 + "/src/metadata_server -a "
                 + metadata_server_addr
@@ -538,7 +538,7 @@ if (
         cmd = (
             srun_cmd
             + cis_addr
-            + " --mpi=" + mpitype
+            + " --mpi=" + mpitype + " "
             + args.buildpath
             + "/src/cis_server -a "
             + cis_addr

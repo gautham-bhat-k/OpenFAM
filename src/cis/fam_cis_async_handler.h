@@ -48,7 +48,7 @@ using namespace chrono;
 namespace openfam {
 MEMSERVER_PROFILE_START(CIS_ASYNC)
 
-#ifdef MEMSERVER_PROFILE
+#ifndef MEMSERVER_PROFILE
 #define CIS_ASYNC_PROFILE_START_OPS()                                          \
     {                                                                          \
         Profile_Time start = CIS_ASYNC_get_time();

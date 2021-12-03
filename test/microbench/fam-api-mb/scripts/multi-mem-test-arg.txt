@@ -1,0 +1,15 @@
+-n=1
+--model=memory_server
+--cisinterface=rpc
+--memserverinterface=rpc
+--metaserverinterface=rpc
+--launcher=slurm
+--pehosts=escnode11
+--provider=psm2
+--cisrpcaddr=escnode5:8787
+--memserverlist=0:escnode6:8795,1:escnode7:8796,2:escnode8:8797,3:escnode9:8798
+--metaserverlist=0:escnode10:8788
+--regionspanningsize=1048576
+/home/bhatkg/dataitem_interleaving/OpenFAM_rebased/
+/home/bhatkg/dataitem_interleaving/OpenFAM_rebased/build/test/config_files/multi-mem/
+/home/bhatkg/dataitem_interleaving/OpenFAM_rebased/build/

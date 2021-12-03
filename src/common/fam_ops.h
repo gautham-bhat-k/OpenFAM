@@ -66,6 +66,9 @@ class Fam_Ops {
      */
     virtual int initialize() = 0;
 
+    virtual void reset_profile() = 0;
+
+    virtual void dump_profile() = 0;
     /**
      * Finalize the libface library. Once finalized, the process can continue
      * work, but it is disconnected from the OpenFAM library functions.

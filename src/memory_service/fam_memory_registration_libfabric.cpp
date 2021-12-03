@@ -106,6 +106,7 @@ Fam_Memory_Registration_Libfabric::Fam_Memory_Registration_Libfabric(
     struct fi_info *fi = famOps->get_fi();
     if (fi->domain_attr->control_progress == FI_PROGRESS_MANUAL ||
         fi->domain_attr->data_progress == FI_PROGRESS_MANUAL) {
+	cout << "Progress mode is set to manual" << endl;
         libfabricProgressMode = FI_PROGRESS_MANUAL;
     }
 

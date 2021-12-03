@@ -663,7 +663,7 @@ int fabric_completion_wait(Fam_Context *famCtx, fi_context *ctx, int ioType) {
 
             THROW_ERRNO_MSG(Fam_Datapath_Exception, get_fam_error(err), errmsg);
         }
-
+	
         memset(&entry, 0, sizeof(entry));
         FI_CALL(ret, fi_cq_read, cq, &entry, 1);
         if (ret > 0) {
@@ -801,12 +801,13 @@ int fabric_read_write_multi_msg(uint64_t count, size_t iov_limit,
                                 struct iovec *iov, struct fi_rma_iov *rma_iov,
                                 bool write, bool block) {
 
+    ssize_t ret = 0;
+    LIBFABRIC_PROFILE_START_OPS()
     int64_t iteration = count / iov_limit;
     if (count % iov_limit > 0)
         iteration++;
 
     int64_t count_remain = count;
-    ssize_t ret = 0;
     uint64_t flags = 0;
     flags = (block ? FI_COMPLETION : 0);
     flags |= ((block && write) ? FI_DELIVERY_COMPLETE : 0);
@@ -870,6 +871,7 @@ int fabric_read_write_multi_msg(uint64_t count, size_t iov_limit,
 
     if (block)
         delete ctx;
+    LIBFABRIC_PROFILE_END_OPS(fabric_read_write_multi_msg)
     return (int)ret;
 }
 /*
@@ -886,6 +888,7 @@ int fabric_read_write_multi_msg(uint64_t count, size_t iov_limit,
  *  @param base - base address of remote memory
  *  @return - {true(0), false(1), errNo(<0)}
  */
+#if 1
 int fabric_write(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
                  fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
                  uint64_t base, bool block) {
@@ -894,11 +897,12 @@ int fabric_write(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
   struct fi_rma_iov *rma_iov = new fi_rma_iov[ioInfo.size()];
 
     int ret = 0;
+    LIBFABRIC_PROFILE_START_OPS()    
     for (int i = 0; i < (int)ioInfo.size(); i++) {
       iov[i] = ioInfo[i].first;
       rma_iov[i] = ioInfo[i].second;
     }
-
+    LIBFABRIC_PROFILE_END_OPS(IO_vector_array_creation)
     if (block) {
       ret = fabric_read_write_multi_msg(ioInfo.size(), iov_limit, fiAddr,
                                         famCtx, iov, rma_iov, 1, 1);
@@ -910,7 +914,23 @@ int fabric_write(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
     delete rma_iov;
     return ret;
 }
-
+#else
+int fabric_write(iovec *iov, fi_rma_iov *rma_iov, uint64_t count,  
+                 fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
+                 uint64_t base, bool block) {
+    int ret = 0;
+    if (block) {
+      ret = fabric_read_write_multi_msg(count, iov_limit, fiAddr,
+                                        famCtx, iov, rma_iov, 1, 1);
+    } else {
+      ret = fabric_read_write_multi_msg(count, iov_limit, fiAddr,
+                                        famCtx, iov, rma_iov, 1, 0);
+    }
+    //delete iov;
+    //delete rma_iov;
+    return ret;
+}
+#endif
 int fabric_read(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
                 fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
                 uint64_t base, bool block) {

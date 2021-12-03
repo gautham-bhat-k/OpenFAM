@@ -597,6 +597,7 @@ class fam::Impl_ {
 void fam::Impl_::fam_reset_profile() {
     FAM_PROFILE_INIT();
     FAM_PROFILE_START_TIME();
+    famOps->reset_profile();
 }
 #endif
 

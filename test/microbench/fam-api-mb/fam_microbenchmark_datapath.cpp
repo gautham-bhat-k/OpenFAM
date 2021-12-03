@@ -42,7 +42,7 @@
 #include "common/fam_test_config.h"
 //#define NUM_ITERATIONS 1000
 #define ALL_PERM 0777
-#define BIG_REGION_SIZE 1073741824
+#define BIG_REGION_SIZE 10737418240
 using namespace std;
 using namespace openfam;
 
@@ -58,7 +58,7 @@ size_t test_item_size;
 
 uint64_t gDataSize = 256;
 
-#ifdef MEMSERVER_PROFILE
+#ifndef MEMSERVER_PROFILE
 #define RESET_PROFILE()                                                        \
     {                                                                          \
         cis->reset_profile();                                                  \
@@ -317,7 +317,7 @@ int main(int argc, char **argv) {
 
 // Note:this test can not be run with multiple memory server model, when memory
 // server profiling is enabled.
-#ifdef MEMSERVER_PROFILE
+#ifndef MEMSERVER_PROFILE
     char *openFamModel = NULL;
     EXPECT_NO_THROW(
         openFamModel = (char *)my_fam->fam_get_option(strdup("OPENFAM_MODEL")));
@@ -347,21 +347,25 @@ int main(int argc, char **argv) {
 
     test_perm_mode = ALL_PERM;
     //test_item_size = gDataSize * 4;
-	test_item_size = 104857600;
+    test_item_size = 1073741824;
     // Allocating data items in the created region
     EXPECT_NO_THROW(item = my_fam->fam_allocate(dataItem, test_item_size,
                                                 test_perm_mode, desc));
 
     // EXPECT_NO_THROW(item = my_fam->fam_lookup(dataItem, testRegion));
     EXPECT_NE((void *)NULL, item);
-
+#if 1
     uint64_t testOffset = 0;
     for (int i = 0; i < 10; i++) {
-        EXPECT_NO_THROW(my_fam->fam_fetch_int32(item, testOffset));
+	int64_t *local = (int64_t *)malloc(gDataSize);
+	EXPECT_NO_THROW(
+            my_fam->fam_put_blocking(local, item, testOffset, gDataSize));
+	my_fam->fam_reset_profile();
+	free(local);
     }
-
+#endif
     EXPECT_NO_THROW(my_fam->fam_barrier_all());
-#ifdef MEMSERVER_PROFILE
+#ifndef MEMSERVER_PROFILE
     EXPECT_NO_THROW(cis->reset_profile());
     EXPECT_NO_THROW(fabric_reset_profile());
     EXPECT_NO_THROW(my_fam->fam_barrier_all());

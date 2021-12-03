@@ -392,6 +392,7 @@ uint64_t Memserver_Allocator::allocate(uint64_t regionId, size_t nbytes) {
     else
         tmpSize = nbytes;
     NVMM_PROFILE_START_OPS()
+	cout << "Memserver_Allocator::allocate::size:: " << tmpSize << endl;
     offset = heap->AllocOffset(tmpSize);
     NVMM_PROFILE_END_OPS(Heap_AllocOffset)
     if (!offset) {

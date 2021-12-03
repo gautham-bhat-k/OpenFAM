@@ -44,13 +44,48 @@
 #include "common/fam_ops_libfabric.h"
 #include "fam/fam.h"
 #include "fam/fam_exception.h"
+#include "common/fam_memserver_profile.h"
+//#define MAX_IO 256
 
 using namespace std;
+using namespace chrono;
 
 namespace openfam {
+MEMSERVER_PROFILE_START(FAM_OPS_LIBFABRIC)
+#ifdef MEMSERVER_PROFILE
+#define FAM_OPS_LIBFABRIC_PROFILE_START_OPS()                                         \
+    {                                                                          \
+        Profile_Time start = FAM_OPS_LIBFABRIC_get_time();
+
+#define FAM_OPS_LIBFABRIC_PROFILE_END_OPS(apiIdx)                                     \
+    Profile_Time end = FAM_OPS_LIBFABRIC_get_time();                                  \
+    Profile_Time total = FAM_OPS_LIBFABRIC_time_diff_nanoseconds(start, end);         \
+    MEMSERVER_PROFILE_ADD_TO_TOTAL_OPS(FAM_OPS_LIBFABRIC, prof_##apiIdx, total)       \
+    }
+#define FAM_OPS_LIBFABRIC_PROFILE_DUMP() fam_ops_libfabric_profile_dump()
+#else
+#define FAM_OPS_LIBFABRIC_PROFILE_START_OPS()
+#define FAM_OPS_LIBFABRIC_PROFILE_END_OPS(apiIdx)
+#define FAM_OPS_LIBFABRIC_PROFILE_DUMP()
+#endif
+
+void fam_ops_libfabric_profile_dump() {
+    MEMSERVER_PROFILE_END(FAM_OPS_LIBFABRIC);
+    MEMSERVER_DUMP_PROFILE_BANNER(FAM_OPS_LIBFABRIC)
+#undef MEMSERVER_COUNTER
+#define MEMSERVER_COUNTER(name)                                                \
+    MEMSERVER_DUMP_PROFILE_DATA(FAM_OPS_LIBFABRIC, name, prof_##name)
+#include "fam-api/fam_ops_libfabric.tbl"
+
+#undef MEMSERVER_COUNTER
+#define MEMSERVER_COUNTER(name) MEMSERVER_PROFILE_TOTAL(FAM_OPS_LIBFABRIC, prof_##name)
+#include "fam-api/fam_ops_libfabric.tbl"
+    MEMSERVER_DUMP_PROFILE_SUMMARY(FAM_OPS_LIBFABRIC)
+}
 
 Fam_Ops_Libfabric::~Fam_Ops_Libfabric() {
 
+    FAM_OPS_LIBFABRIC_PROFILE_DUMP();
     delete contexts;
     delete defContexts;
     delete fiAddrs;
@@ -134,6 +169,17 @@ Fam_Ops_Libfabric::Fam_Ops_Libfabric(bool source, const char *libfabricProvider,
                 << famContextModel;
         THROW_ERR_MSG(Fam_InvalidOption_Exception, message.str().c_str());
     }
+}
+
+void Fam_Ops_Libfabric::reset_profile() {
+
+    MEMSERVER_PROFILE_INIT(FAM_OPS_LIBFABRIC)
+    MEMSERVER_PROFILE_START_TIME(FAM_OPS_LIBFABRIC)
+    return;
+}
+
+void Fam_Ops_Libfabric::dump_profile() {
+    FAM_OPS_LIBFABRIC_PROFILE_DUMP();
 }
 
 int Fam_Ops_Libfabric::initialize() {
@@ -374,6 +420,7 @@ void Fam_Ops_Libfabric::finalize() {
 
 int Fam_Ops_Libfabric::put_blocking(void *local, Fam_Descriptor *descriptor,
                                     uint64_t offset, uint64_t nbytes) {
+  //FAM_OPS_LIBFABRIC_PROFILE_START_OPS()
   uint64_t *memServerIds = descriptor->get_memserver_ids();
   size_t interleaveSize = descriptor->get_interleave_size();
   uint64_t *keys = descriptor->get_keys();
@@ -390,7 +437,22 @@ int Fam_Ops_Libfabric::put_blocking(void *local, Fam_Descriptor *descriptor,
 
   // Array of vector to accommodate IOs belonging to each memory server
   std::vector<std::pair<iovec, fi_rma_iov> > writeIOVectors[usedMemsrvCnt];
+  //iovec **iovs = (iovec **)malloc(sizeof(iovec)*MAX_IO*usedMemsrvCnt);
+  //fi_rma_iov **rma_iovs = (fi_rma_iov **)malloc(sizeof(fi_rma_iov)*MAX_IO*usedMemsrvCnt);
+  //uint64_t *counts = (uint64_t *)malloc(sizeof(uint64_t)*usedMemsrvCnt);
+#if 0
+  iovec **iovs = new iovec*[usedMemsrvCnt];
+  for(int i=0; i<(int)usedMemsrvCnt; i++) {
+	iovs[i] = new iovec[MAX_IO];
+  }
 
+  fi_rma_iov **rma_iovs = new fi_rma_iov *[usedMemsrvCnt];
+  for(int i=0; i<(int)usedMemsrvCnt; i++) {
+	rma_iovs[i] = new fi_rma_iov[MAX_IO];
+  }
+  uint64_t *counts = new uint64_t[usedMemsrvCnt];
+  memset(counts, 0, sizeof(uint64_t)*usedMemsrvCnt);
+#endif
   int ret = 0;
   std::vector<fi_addr_t> *fiAddr = get_fiAddrs();
   // Current memory server Id index
@@ -402,6 +464,7 @@ int Fam_Ops_Libfabric::put_blocking(void *local, Fam_Descriptor *descriptor,
   // Current Local pointer position
   uint64_t currentLocalPtr = (uint64_t)local;
   uint64_t writeSize = nbytes;
+  //FAM_OPS_LIBFABRIC_PROFILE_END_OPS(init_calculations)
   /*
    * Starting from the given offset the iovec and fi_rma_iov structures are
    * created for each data chunk of size equal
@@ -411,6 +474,7 @@ int Fam_Ops_Libfabric::put_blocking(void *local, Fam_Descriptor *descriptor,
    * block as the given offset may be displaced
    * from the starting posion of any interleave block.
    */
+  FAM_OPS_LIBFABRIC_PROFILE_START_OPS()
   do {
     uint64_t availableSize =
         (currentBlockIndex + 1) * interleaveSize - currentFamPtr;
@@ -427,6 +491,11 @@ int Fam_Ops_Libfabric::put_blocking(void *local, Fam_Descriptor *descriptor,
       rma_iov.key = keys[currentServerIndex];
 
       writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      //iovs[currentServerIndex][counts[currentServerIndex]] = iov;
+      //cout << "number of IOs in server " << currentServerIndex << " : " << counts[currentServerIndex] << endl;
+      //rma_iovs[currentServerIndex][counts[currentServerIndex]] = rma_iov;
+      //counts[currentServerIndex]++;
+
       writeSize -= availableSize;
       currentServerIndex++;
       // If last memory server is reached roll back to first server and incement
@@ -447,27 +516,42 @@ int Fam_Ops_Libfabric::put_blocking(void *local, Fam_Descriptor *descriptor,
       rma_iov.key = keys[currentServerIndex];
 
       writeIOVectors[currentServerIndex].push_back({ iov, rma_iov });
+      //iovs[currentServerIndex][counts[currentServerIndex]] = iov;
+      //rma_iovs[currentServerIndex][counts[currentServerIndex]] = rma_iov;
+      //counts[currentServerIndex]++;
       currentLocalPtr += writeSize;
       writeSize = 0;
     }
   } while (writeSize != 0);
-
+  FAM_OPS_LIBFABRIC_PROFILE_END_OPS(io_vector_accumulation)
   /*
    * Iterate over the array of vector for each memory server and perform write
    * operation using libfabric
    */
+  FAM_OPS_LIBFABRIC_PROFILE_START_OPS()
   for (int i = 0; i < (int)usedMemsrvCnt; i++) {
     int index = (i + (int)startServerIdx) % (int)usedMemsrvCnt;
+#if 1
     if (!writeIOVectors[index].empty()) {
       ret = fabric_write(writeIOVectors[index], (*fiAddr)[memServerIds[index]],
                          get_context(descriptor, memServerIds[index]),
                          fabric_iov_limit, (uint64_t)(base_addr_list[index]),
                          true);
     }
+#else
+    if(counts[index]) {
+     ret = fabric_write(iovs[index], rma_iovs[index], counts[index], (*fiAddr)[memServerIds[index]], 
+                         get_context(descriptor, memServerIds[index]),
+                         fabric_iov_limit, (uint64_t)(base_addr_list[index]),
+                         true);
+    }
+#endif
   }
+  FAM_OPS_LIBFABRIC_PROFILE_END_OPS(fabric_call_to_memserver)
   return ret;
 }
 
+#if 1
 int Fam_Ops_Libfabric::get_blocking(void *local, Fam_Descriptor *descriptor,
                                     uint64_t offset, uint64_t nbytes) {
   uint64_t *memServerIds = descriptor->get_memserver_ids();
@@ -1512,7 +1596,7 @@ int64_t Fam_Ops_Libfabric::atomic_fetch_add(Fam_Descriptor *descriptor,
                         get_context(descriptor, memServerIds[startServerIdx]));
     return result;
 }
-
+#endif
 void *Fam_Ops_Libfabric::backup(Fam_Descriptor *descriptor, char *BackupName) {
 
     return famAllocator->backup(descriptor, BackupName);
@@ -1539,6 +1623,18 @@ uint64_t Fam_Ops_Libfabric::progress_context() {
         pending += fabric_progress(fam_ctx.second);
     }
     return pending;
+}
+
+void Fam_Ops_Libfabric::check_progress(Fam_Region_Descriptor *descriptor) {
+    if (famContextModel == FAM_CONTEXT_DEFAULT) {
+
+        for (auto context : *defContexts) {
+            Fam_Context *famCtx = context.second;
+            uint64_t success = fi_cntr_read(famCtx->get_txCntr());
+            success += fi_cntr_read(famCtx->get_rxCntr());
+        }
+    }
+    return;
 }
 
 
@@ -1771,18 +1867,6 @@ void Fam_Ops_Libfabric::fence(Fam_Region_Descriptor *descriptor) {
         // ctx mutex unlock
         (void)pthread_mutex_unlock(&ctxLock);
     }
-}
-
-void Fam_Ops_Libfabric::check_progress(Fam_Region_Descriptor *descriptor) {
-    if (famContextModel == FAM_CONTEXT_DEFAULT) {
-
-        for (auto context : *defContexts) {
-            Fam_Context *famCtx = context.second;
-            uint64_t success = fi_cntr_read(famCtx->get_txCntr());
-            success += fi_cntr_read(famCtx->get_rxCntr());
-        }
-    }
-    return;
 }
 
 <<<<<<< Updated upstream

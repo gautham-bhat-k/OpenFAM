@@ -163,7 +163,7 @@ Fam_Descriptor *Fam_Allocator_Client::allocate(const char *name,
     dataItem->set_name((char *)name);
     dataItem->set_perm(accessPermissions);
     dataItem->set_desc_status(DESC_INIT_DONE);
-    dataItem->set_interleave_size(16384);
+    dataItem->set_interleave_size(1048576);
     return dataItem;
 }
 

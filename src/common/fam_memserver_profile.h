@@ -100,6 +100,11 @@ typedef enum Memory_Reg_Fabric_Counter_Enum {
     MEMORY_REG_FABRIC_COUNTER_MAX
 } Memory_Reg_Fabric_Counter_Enum_T;
 
+typedef enum Fam_Ops_Libfabric_Counter_Enum {
+#include "fam-api/fam_ops_libfabric.tbl"
+    FAM_OPS_LIBFABRIC_COUNTER_MAX
+} Fam_Ops_Libfabric_Counter_Enum_T;
+
 #define MEMSERVER_PROFILE_START(PROFILE_NAME)                                  \
     struct PROFILE_NAME##_Counter_St {                                         \
         Memserver_Time count;                                                  \

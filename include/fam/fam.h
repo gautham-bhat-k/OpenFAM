@@ -1142,6 +1142,10 @@ class fam {
      */
     uint64_t fam_progress(void);
 
+#ifdef FAM_PROFILE
+    void fam_reset_profile();
+#endif
+
     /**
      * fam() - constructor for fam class
      */

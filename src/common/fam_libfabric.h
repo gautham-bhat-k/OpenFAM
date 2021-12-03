@@ -87,10 +87,16 @@ int fabric_deregister_mr(fid_mr *&mr);
 int fabric_read(uint64_t key, const void *local, size_t nbytes, uint64_t offset,
                 fi_addr_t fiAddr, Fam_Context *famCtx);
 
+#if 1
 int fabric_write(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
                  fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
                  uint64_t base, bool block);
+#else
+int fabric_write(iovec *iov, fi_rma_iov *rma_iov, uint64_t count,
+                 fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
+                 uint64_t base, bool block);
 
+#endif
 int fabric_read(std::vector<std::pair<iovec, fi_rma_iov> > ioInfo,
                 fi_addr_t fiAddr, Fam_Context *famCtx, size_t iov_limit,
                 uint64_t base, bool block);
