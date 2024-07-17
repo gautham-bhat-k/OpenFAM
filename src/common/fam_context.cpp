@@ -52,6 +52,8 @@ Fam_Context::Fam_Context(Fam_Thread_Model famTM)
     famThreadModel = famTM;
     if (famThreadModel == FAM_THREAD_MULTIPLE)
         pthread_rwlock_init(&ctxRWLock, NULL);
+
+    pthread_rwlock_init(&bufferMapLock, NULL);
 }
 
 Fam_Context::Fam_Context(struct fi_info *fi, struct fid_domain *domain,
@@ -73,6 +75,8 @@ Fam_Context::Fam_Context(struct fi_info *fi, struct fid_domain *domain,
     famThreadModel = famTM;
     if (famThreadModel == FAM_THREAD_MULTIPLE)
         pthread_rwlock_init(&ctxRWLock, NULL);
+
+    pthread_rwlock_init(&bufferMapLock, NULL);
 
     int ret = fi_endpoint(domain, fi, &ep, NULL);
     if (ret < 0) {
@@ -144,9 +148,10 @@ Fam_Context::Fam_Context(struct fi_info *fi, struct fid_domain *domain,
 
 Fam_Context::~Fam_Context() {
     if (!isNVMM) {
-        free(mr_descs);
-        if (mr != NULL)
-            fi_close(&mr->fid);
+        while(!bufferDescriptors.empty()) {
+            auto it = bufferDescriptors.begin();
+            deregister_heap((void *)it->first);
+        }
         fi_close(&ep->fid);
         fi_close(&txcq->fid);
         fi_close(&rxcq->fid);
@@ -154,6 +159,7 @@ Fam_Context::~Fam_Context() {
         fi_close(&rxCntr->fid);
     }
     pthread_rwlock_destroy(&ctxRWLock);
+    pthread_rwlock_destroy(&bufferMapLock);
 }
 
 int Fam_Context::initialize_cntr(struct fid_domain *domain,
@@ -180,14 +186,10 @@ void Fam_Context::register_heap(void *base, size_t len,
                                 struct fid_domain *domain, size_t iov_limit) {
     std::ostringstream message;
     int ret;
-    local_buf_base = base;
-    local_buf_size = len;
 
-    if (mr || mr_descs) {
-        message << "Fam_Context register_heap() called more than once";
-        THROW_ERR_MSG(Fam_Datapath_Exception, message.str().c_str());
-    }
-    mr_descs = (void **)calloc(iov_limit, sizeof(*mr_descs));
+    struct fid_mr *mr = NULL;
+
+    void **mr_descs = (void **)calloc(iov_limit, sizeof(*mr_descs));
     if (!mr_descs) {
         message << "Fam_Context register_heap() failed to allocate memory";
         THROW_ERR_MSG(Fam_Datapath_Exception, message.str().c_str());
@@ -199,6 +201,69 @@ void Fam_Context::register_heap(void *base, size_t len,
     }
     for (size_t i = 0; i < iov_limit; i++)
         mr_descs[i] = fi_mr_desc(mr);
+
+    Fam_Buffer_Desc *bufferDesc = new Fam_Buffer_Desc();
+    bufferDesc->mr_descs = mr_descs;
+    bufferDesc->buffSize = len;
+    bufferDesc->mr = mr;
+
+    pthread_rwlock_wrlock(&bufferMapLock);
+    bufferDescriptors.insert({(uint64_t)base, bufferDesc});
+    pthread_rwlock_unlock(&bufferMapLock);
+
+}
+
+void Fam_Context::deregister_heap(void *base) {
+    std::ostringstream message;
+    int ret;
+
+    pthread_rwlock_wrlock(&bufferMapLock);
+    auto it = bufferDescriptors.find((uint64_t)base);
+    if(it == bufferDescriptors.end()) {
+        pthread_rwlock_unlock(&bufferMapLock);
+        message << "Fam_Context deregister_heap() failed to find buffer descriptor";
+        THROW_ERR_MSG(Fam_Datapath_Exception, message.str().c_str());
+    }
+    Fam_Buffer_Desc *bufferDesc = it->second;
+    bufferDescriptors.erase(it);
+    pthread_rwlock_unlock(&bufferMapLock);
+
+    ret = fi_close(&bufferDesc->mr->fid);
+    if (ret < 0) {
+        message << "Fam libfabric fi_close failed: " << fabric_strerror(ret);
+        THROW_ERR_MSG(Fam_Datapath_Exception, message.str().c_str());
+    }
+    free(bufferDesc->mr_descs);
+    delete bufferDesc;
+}
+
+void **Fam_Context::get_mr_descs(const void *local_addr, size_t local_size) {
+    std::ostringstream message;
+    pthread_rwlock_rdlock(&bufferMapLock);
+    auto it = bufferDescriptors.lower_bound((uint64_t)local_addr);
+    if(it == bufferDescriptors.end()) {
+        pthread_rwlock_unlock(&bufferMapLock);
+        message << "Fam_Context deregister_heap() failed to find buffer descriptor";
+        THROW_ERR_MSG(Fam_Datapath_Exception, message.str().c_str());
+    }
+    pthread_rwlock_unlock(&bufferMapLock);
+
+    // lower_bound returns the first element that is not less than the key
+    // so if the key not eaqual to the local_addr, we need to take the previous key 
+    // to get the correct buffer descriptor
+    if (it->first != (uint64_t)local_addr)
+        it--;
+    
+    void *registered_buf_base = (void *)it->first;
+    size_t registered_buf_size = it->second->buffSize;
+
+    if (registered_buf_size != 0 &&
+        (char *)local_addr >= (char *)registered_buf_base &&
+        (char *)local_addr + local_size <=
+            (char *)registered_buf_base + registered_buf_size)
+        return it->second->mr_descs;
+    else
+        return 0;
 }
 
 } // namespace openfam
